@@ -1,11 +1,11 @@
-// YouTube Chat Helper - Refactored Version
+// YouTube Chat Helper - Refactored Version v2.1
 // グローバル変数
 const STORAGE_KEY = "chatData";
+const SETTINGS_KEY = "chatHelperSettings";
 const GLOBAL_CHANNEL_KEY = "__global__";
 
 // ユーティリティ関数
 const Utils = {
-    // DOM要素の安全な取得
     safeQuerySelector(element, selector) {
         try {
             return element?.querySelector(selector) || null;
@@ -15,7 +15,15 @@ const Utils = {
         }
     },
 
-    // 現在のチャンネル情報を取得
+    safeQuerySelectorAll(element, selector) {
+        try {
+            return element?.querySelectorAll(selector) || [];
+        } catch (e) {
+            console.warn(`セレクタエラー: ${selector}`, e);
+            return [];
+        }
+    },
+
     getChannelInfo() {
         const channelElement = this.safeQuerySelector(
             document,
@@ -28,7 +36,6 @@ const Utils = {
         };
     },
 
-    // デバウンス関数
     debounce(func, wait) {
         let timeout;
         return function executedFunction(...args) {
@@ -39,6 +46,39 @@ const Utils = {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    }
+};
+
+// 設定管理
+const Settings = {
+    defaults: {
+        ccpppEnabled: true,
+        autoLoadStamps: true
+    },
+
+    get() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+            return { ...this.defaults, ...saved };
+        } catch (e) {
+            return this.defaults;
+        }
+    },
+
+    save(settings) {
+        try {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            return true;
+        } catch (e) {
+            console.error("設定保存エラー:", e);
+            return false;
+        }
+    },
+
+    set(key, value) {
+        const settings = this.get();
+        settings[key] = value;
+        return this.save(settings);
     }
 };
 
@@ -63,7 +103,6 @@ const Storage = {
         }
     },
 
-    // テンプレートの保存（チャンネル別またはグローバル）
     saveTemplate(newContent, isGlobal = false) {
         const data = this.getData();
         const template = {
@@ -97,7 +136,6 @@ const Storage = {
         return this.saveData(data);
     },
 
-    // テンプレートの削除
     deleteTemplate(channelName, index) {
         const data = this.getData();
 
@@ -117,7 +155,47 @@ const Storage = {
         return this.saveData(data);
     },
 
-    // テンプレートの並び替え
+    // テンプレートをグローバル⇔ローカルに移動
+    moveTemplate(fromChannel, index, toGlobal) {
+        const data = this.getData();
+        let template;
+
+        // 元の場所から取得して削除
+        if (fromChannel === GLOBAL_CHANNEL_KEY) {
+            if (!data.global || !data.global[index]) return false;
+            template = data.global.splice(index, 1)[0];
+        } else {
+            const channel = data.channels.find(ch => ch.name === fromChannel);
+            if (!channel || !channel.data[index]) return false;
+            template = channel.data.splice(index, 1)[0];
+            if (channel.data.length === 0) {
+                data.channels = data.channels.filter(ch => ch.name !== fromChannel);
+            }
+        }
+
+        // 新しい場所に追加
+        if (toGlobal) {
+            if (!data.global) data.global = [];
+            data.global.push(template);
+        } else {
+            const channelInfo = Utils.getChannelInfo();
+            if (!channelInfo) return false;
+
+            let channelIndex = data.channels.findIndex(ch => ch.name === channelInfo.name);
+            if (channelIndex === -1) {
+                data.channels.push({
+                    name: channelInfo.name,
+                    href: channelInfo.href,
+                    data: [template]
+                });
+            } else {
+                data.channels[channelIndex].data.push(template);
+            }
+        }
+
+        return this.saveData(data);
+    },
+
     reorderTemplate(channelName, oldIndex, newIndex) {
         const data = this.getData();
         let templates;
@@ -140,7 +218,6 @@ const Storage = {
         return this.saveData(data);
     },
 
-    // キャプション生成
     generateCaption(content) {
         return content.map(item => {
             if (typeof item === "string") return item;
@@ -149,17 +226,14 @@ const Storage = {
         }).join("").slice(0, 50);
     },
 
-    // 現在のチャンネルのテンプレート取得（グローバル含む）
     getTemplatesForChannel(channelName) {
         const data = this.getData();
         const result = { channel: [], global: [] };
 
-        // グローバルテンプレート
         if (data.global) {
             result.global = data.global.map((t, i) => ({ ...t, index: i, isGlobal: true }));
         }
 
-        // チャンネル別テンプレート
         if (channelName) {
             const channel = data.channels.find(ch => ch.name === channelName);
             if (channel) {
@@ -171,12 +245,166 @@ const Storage = {
     }
 };
 
+// CCPPP機能（絵文字自動変換）
+const CCPPP = {
+    enabled: true,
+    emojiMap: new Map(),
+    observer: null,
+
+    init(iframe) {
+        this.enabled = Settings.get().ccpppEnabled;
+        if (!this.enabled) return;
+
+        this.buildEmojiMap(iframe);
+        this.observeInput(iframe);
+    },
+
+    buildEmojiMap(iframe) {
+        const emojis = Utils.safeQuerySelectorAll(
+            iframe.contentDocument,
+            "tp-yt-iron-pages #categories img[alt]"
+        );
+
+        emojis.forEach(emoji => {
+            if (emoji.alt) {
+                this.emojiMap.set(emoji.alt, emoji.src);
+            }
+        });
+
+        console.log(`CCPPP: ${this.emojiMap.size} 個の絵文字を検出`);
+    },
+
+    observeInput(iframe) {
+        const inputField = Utils.safeQuerySelector(
+            iframe.contentDocument,
+            "yt-live-chat-text-input-field-renderer#input #input"
+        );
+
+        if (!inputField) return;
+
+        if (this.observer) this.observer.disconnect();
+
+        this.observer = new MutationObserver(
+            Utils.debounce(() => this.processInput(iframe), 300)
+        );
+
+        this.observer.observe(inputField, {
+            childList: true,
+            characterData: true,
+            subtree: true
+        });
+
+        // 初回チェック
+        this.processInput(iframe);
+    },
+
+    processInput(iframe) {
+        if (!this.enabled) return;
+
+        const inputField = Utils.safeQuerySelector(
+            iframe.contentDocument,
+            "yt-live-chat-text-input-field-renderer#input #input"
+        );
+
+        if (!inputField) return;
+
+        // テキストノードを検索
+        const textNodes = [];
+        const walker = document.createTreeWalker(
+            inputField,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+
+        let node;
+        while (node = walker.nextNode()) {
+            textNodes.push(node);
+        }
+
+        // 各テキストノードで絵文字名を検索
+        textNodes.forEach(textNode => {
+            const text = textNode.textContent;
+            const regex = /:([^:\s]+):/g;
+            let match;
+            let lastIndex = 0;
+            const fragments = [];
+            let hasEmoji = false;
+
+            while ((match = regex.exec(text)) !== null) {
+                const emojiName = match[1];
+                if (this.emojiMap.has(emojiName)) {
+                    hasEmoji = true;
+                    // マッチ前のテキスト
+                    if (match.index > lastIndex) {
+                        fragments.push(document.createTextNode(text.slice(lastIndex, match.index)));
+                    }
+                    // 絵文字ボタン
+                    const btn = this.createEmojiButton(emojiName, iframe);
+                    fragments.push(btn);
+                    lastIndex = match.index + match[0].length;
+                }
+            }
+
+            if (hasEmoji) {
+                // 残りのテキスト
+                if (lastIndex < text.length) {
+                    fragments.push(document.createTextNode(text.slice(lastIndex)));
+                }
+                // ノードを置換
+                const parent = textNode.parentNode;
+                fragments.forEach(frag => parent.insertBefore(frag, textNode));
+                parent.removeChild(textNode);
+            }
+        });
+    },
+
+    createEmojiButton(emojiName, iframe) {
+        const btn = document.createElement("button");
+        btn.className = "ccppp-emoji-btn";
+        btn.textContent = `:${emojiName}:`;
+        btn.style.cssText = `
+            background: #ff9800;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 1px 4px;
+            margin: 0 2px;
+            cursor: pointer;
+            font-size: 11px;
+        `;
+
+        btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const categories = Utils.safeQuerySelector(
+                iframe.contentDocument,
+                "tp-yt-iron-pages #categories"
+            );
+            if (categories) {
+                const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
+                if (emojiBtn) {
+                    emojiBtn.click();
+                    btn.remove();
+                }
+            }
+        });
+
+        return btn;
+    },
+
+    toggle(enabled) {
+        this.enabled = enabled;
+        Settings.set("ccpppEnabled", enabled);
+    }
+};
+
 // UI管理
 const UI = {
     currentIframe: null,
     managementModal: null,
 
-    // チャット入力を読み取り
     readChatInput(iframe) {
         const inputElement = Utils.safeQuerySelector(
             iframe.contentDocument,
@@ -200,7 +428,6 @@ const UI = {
         return inputData;
     },
 
-    // テンプレートの挿入
     insertTemplate(data, iframe) {
         const inputPanel = Utils.safeQuerySelector(iframe.contentDocument, "#input-panel");
         if (!inputPanel) return;
@@ -223,7 +450,6 @@ const UI = {
         });
     },
 
-    // ボタンの作成
     createButton(id, caption, handler, className = "") {
         const button = document.createElement("button");
         button.id = id;
@@ -248,7 +474,6 @@ const UI = {
         return button;
     },
 
-    // メインUIのセットアップ
     setupChatButtons(iframe) {
         this.currentIframe = iframe;
         const chatContainer = Utils.safeQuerySelector(
@@ -257,11 +482,9 @@ const UI = {
         );
         if (!chatContainer) return;
 
-        // 既存のボタンを削除
         const existingWrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
         if (existingWrapper) existingWrapper.remove();
 
-        // ラッパー作成
         const buttonWrapper = document.createElement("div");
         buttonWrapper.id = "chat-helper-buttons";
 
@@ -281,7 +504,7 @@ const UI = {
         });
 
         // 保存ボタン（チャンネル用）
-        const saveButton = this.createButton("save-channel-btn", "💾 Save", () => {
+        const saveButton = this.createButton("save-channel-btn", "Save", () => {
             const data = this.readChatInput(iframe);
             if (data && data.length > 0) {
                 Storage.saveTemplate(data, false);
@@ -291,7 +514,7 @@ const UI = {
         buttonWrapper.appendChild(saveButton);
 
         // グローバル保存ボタン
-        const saveGlobalButton = this.createButton("save-global-btn", "🌐 Global", () => {
+        const saveGlobalButton = this.createButton("save-global-btn", "Global", () => {
             const data = this.readChatInput(iframe);
             if (data && data.length > 0) {
                 Storage.saveTemplate(data, true);
@@ -300,16 +523,15 @@ const UI = {
         }, "save-btn global-btn");
         buttonWrapper.appendChild(saveGlobalButton);
 
-        // 管理ボタン
-        const manageButton = this.createButton("manage-templates-btn", "⚙️", () => {
-            this.showManagementUI();
+        // 設定ボタン
+        const manageButton = this.createButton("manage-templates-btn", "Settings", () => {
+            this.showSettingsUI();
         }, "manage-btn");
         buttonWrapper.appendChild(manageButton);
 
         chatContainer.appendChild(buttonWrapper);
     },
 
-    // テンプレートボタンの作成
     createTemplateButton(entry, index, channelName, iframe, isGlobal) {
         const btn = this.createButton(
             `template-btn-${isGlobal ? "g" : "c"}-${index}`,
@@ -318,26 +540,27 @@ const UI = {
             isGlobal ? "template-btn global" : "template-btn"
         );
 
-        // 右クリックで削除
         btn.addEventListener("contextmenu", (event) => {
             event.preventDefault();
-            this.showContextMenu(event, channelName, index, iframe);
+            this.showContextMenu(event, channelName, index, iframe, isGlobal);
         });
 
         return btn;
     },
 
-    // コンテキストメニュー表示
-    showContextMenu(event, channelName, index, iframe) {
+    showContextMenu(event, channelName, index, iframe, isGlobal) {
         const existingMenu = document.querySelector("#chat-helper-context-menu");
         if (existingMenu) existingMenu.remove();
 
         const menu = document.createElement("div");
         menu.id = "chat-helper-context-menu";
+
+        const toggleText = isGlobal ? "ローカルに移動" : "グローバルに移動";
         menu.innerHTML = `
-            <div class="menu-item delete-item">🗑️ 削除</div>
-            <div class="menu-item move-up-item">⬆️ 上に移動</div>
-            <div class="menu-item move-down-item">⬇️ 下に移動</div>
+            <div class="menu-item delete-item">削除</div>
+            <div class="menu-item toggle-scope-item">${toggleText}</div>
+            <div class="menu-item move-up-item">上に移動</div>
+            <div class="menu-item move-down-item">下に移動</div>
         `;
 
         const rect = iframe.getBoundingClientRect();
@@ -349,6 +572,13 @@ const UI = {
         // 削除
         menu.querySelector(".delete-item").addEventListener("click", () => {
             Storage.deleteTemplate(channelName, index);
+            this.setupChatButtons(iframe);
+            menu.remove();
+        });
+
+        // グローバル/ローカル切り替え
+        menu.querySelector(".toggle-scope-item").addEventListener("click", () => {
+            Storage.moveTemplate(channelName, index, !isGlobal);
             this.setupChatButtons(iframe);
             menu.remove();
         });
@@ -369,7 +599,6 @@ const UI = {
             menu.remove();
         });
 
-        // メニュー外クリックで閉じる
         const closeMenu = () => {
             if (document.body.contains(menu)) menu.remove();
         };
@@ -379,8 +608,7 @@ const UI = {
         }, 10);
     },
 
-    // 管理UI表示
-    showManagementUI() {
+    showSettingsUI() {
         if (this.managementModal) this.managementModal.remove();
 
         const modal = document.createElement("div");
@@ -389,20 +617,38 @@ const UI = {
 
         const data = Storage.getData();
         const channelInfo = Utils.getChannelInfo();
+        const settings = Settings.get();
 
         modal.innerHTML = `
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>テンプレート管理</h2>
-                    <button class="close-btn">✕</button>
+                    <h2>YouTube Chat Helper 設定</h2>
+                    <button class="close-btn">×</button>
                 </div>
                 <div class="modal-body">
                     <div class="tabs">
-                        <button class="tab active" data-tab="current">現在のチャンネル</button>
+                        <button class="tab active" data-tab="settings">設定</button>
+                        <button class="tab" data-tab="current">現在のチャンネル</button>
                         <button class="tab" data-tab="global">グローバル</button>
                         <button class="tab" data-tab="all">全チャンネル</button>
                     </div>
-                    <div class="tab-content" id="tab-current"></div>
+                    <div class="tab-content" id="tab-settings">
+                        <div class="settings-section">
+                            <h3>機能設定</h3>
+                            <label class="setting-item">
+                                <input type="checkbox" id="ccppp-toggle" ${settings.ccpppEnabled ? "checked" : ""}>
+                                <span>CCPPP（絵文字自動変換）を有効にする</span>
+                            </label>
+                            <p class="setting-desc">:emoji_name: 形式のテキストを自動的にクリック可能なボタンに変換します</p>
+
+                            <label class="setting-item">
+                                <input type="checkbox" id="autoload-toggle" ${settings.autoLoadStamps ? "checked" : ""}>
+                                <span>ページ読み込み時にスタンプを自動読み込み</span>
+                            </label>
+                            <p class="setting-desc">ページ読み込み時に絵文字ボタンを自動クリックしてスタンプを事前読み込みします</p>
+                        </div>
+                    </div>
+                    <div class="tab-content hidden" id="tab-current"></div>
                     <div class="tab-content hidden" id="tab-global"></div>
                     <div class="tab-content hidden" id="tab-all"></div>
                 </div>
@@ -410,6 +656,18 @@ const UI = {
         `;
 
         document.body.appendChild(modal);
+
+        // 設定の変更イベント
+        modal.querySelector("#ccppp-toggle").addEventListener("change", (e) => {
+            CCPPP.toggle(e.target.checked);
+            if (e.target.checked && this.currentIframe) {
+                CCPPP.init(this.currentIframe);
+            }
+        });
+
+        modal.querySelector("#autoload-toggle").addEventListener("change", (e) => {
+            Settings.set("autoLoadStamps", e.target.checked);
+        });
 
         // タブ切り替え
         modal.querySelectorAll(".tab").forEach(tab => {
@@ -426,7 +684,7 @@ const UI = {
         if (channelInfo) {
             const channel = data.channels.find(ch => ch.name === channelInfo.name);
             if (channel && channel.data.length > 0) {
-                currentTab.innerHTML = this.renderTemplateList(channel.name, channel.data, false);
+                currentTab.innerHTML = `<h3>${channelInfo.name}</h3>` + this.renderTemplateList(channel.name, channel.data, false);
             } else {
                 currentTab.innerHTML = "<p>このチャンネルにはテンプレートがありません。</p>";
             }
@@ -463,14 +721,18 @@ const UI = {
             this.managementModal = null;
         });
 
-        // ドラッグ＆ドロップの設定
-        this.setupDragAndDrop(modal);
+        // モーダル外クリックで閉じる
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                this.managementModal = null;
+            }
+        });
 
-        // 削除ボタンのイベント
+        this.setupDragAndDrop(modal);
         this.setupDeleteButtons(modal);
     },
 
-    // テンプレートリストのレンダリング
     renderTemplateList(channelName, templates, isGlobal) {
         return `<ul class="template-list" data-channel="${channelName}">
             ${templates.map((t, i) => `
@@ -478,20 +740,18 @@ const UI = {
                     <span class="drag-handle">☰</span>
                     <span class="template-caption">${this.escapeHtml(t.caption || Storage.generateCaption(t.content))}</span>
                     <span class="template-time">${new Date(t.timestamp).toLocaleString()}</span>
-                    <button class="delete-template-btn" data-channel="${channelName}" data-index="${i}">🗑️</button>
+                    <button class="delete-template-btn" data-channel="${channelName}" data-index="${i}">削除</button>
                 </li>
             `).join("")}
         </ul>`;
     },
 
-    // HTMLエスケープ
     escapeHtml(text) {
         const div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
     },
 
-    // ドラッグ＆ドロップ設定
     setupDragAndDrop(modal) {
         let draggedItem = null;
         let draggedChannel = null;
@@ -528,7 +788,6 @@ const UI = {
 
             item.addEventListener("drop", () => {
                 if (draggedItem && draggedChannel) {
-                    const newIndex = parseInt(draggedItem.dataset.index);
                     const items = Array.from(item.closest(".template-list").children);
                     const actualNewIndex = items.indexOf(draggedItem);
 
@@ -537,7 +796,6 @@ const UI = {
                         if (this.currentIframe) {
                             this.setupChatButtons(this.currentIframe);
                         }
-                        // インデックスを更新
                         items.forEach((li, idx) => li.dataset.index = idx);
                     }
                 }
@@ -545,7 +803,6 @@ const UI = {
         });
     },
 
-    // 削除ボタンの設定
     setupDeleteButtons(modal) {
         modal.querySelectorAll(".delete-template-btn").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -556,13 +813,12 @@ const UI = {
                     if (this.currentIframe) {
                         this.setupChatButtons(this.currentIframe);
                     }
-                    this.showManagementUI(); // UIを再描画
+                    this.showSettingsUI();
                 }
             });
         });
     },
 
-    // スタイルの追加
     addStyles(iframe) {
         const styleId = "chat-helper-styles";
         if (iframe.contentDocument.querySelector(`#${styleId}`)) return;
@@ -574,31 +830,34 @@ const UI = {
                 position: absolute;
                 top: 0;
                 margin-top: 36px;
-                visibility: hidden;
                 z-index: 1;
-                background: rgba(144, 238, 144, 0.2);
+                background: rgba(144, 238, 144, 0.3);
                 height: auto;
                 width: 100%;
-                overflow: hidden;
-                transition: all 0.2s ease;
+                overflow: visible;
                 display: flex;
                 gap: 3px;
                 flex-wrap: wrap;
-                padding: 0;
+                padding: 4px;
+                box-sizing: border-box;
             }
 
             #chat-helper-buttons button {
-                visibility: hidden;
-                height: 0;
                 margin: 0;
-                padding: 0;
+                padding: 2px 6px;
                 font-size: 12px;
                 background-color: #0073e6;
                 color: white;
                 border: none;
                 border-radius: 10px;
                 cursor: pointer;
-                transition: all 0.2s ease;
+                height: auto;
+                min-height: 20px;
+                white-space: nowrap;
+            }
+
+            #chat-helper-buttons button:hover {
+                opacity: 0.8;
             }
 
             #chat-helper-buttons button.template-btn.global {
@@ -615,24 +874,6 @@ const UI = {
 
             #chat-helper-buttons button.manage-btn {
                 background-color: #607d8b;
-            }
-
-            #input-panel>yt-live-chat-message-input-renderer[emoji-open] #chat-helper-buttons {
-                visibility: visible;
-                margin-top: 36px;
-                padding-bottom: 10px;
-            }
-
-            #chat-helper-buttons:hover {
-                height: auto;
-                opacity: 0.9;
-                padding: 4px;
-            }
-
-            #chat-helper-buttons:hover button {
-                padding: 2px 5px;
-                visibility: visible;
-                height: 19px;
             }
 
             #input-panel #container {
@@ -655,7 +896,6 @@ const UI = {
         iframe.contentDocument.head.appendChild(styleTag);
     },
 
-    // メインページのスタイル
     addMainPageStyles() {
         const styleId = "chat-helper-main-styles";
         if (document.querySelector(`#${styleId}`)) return;
@@ -670,7 +910,7 @@ const UI = {
                 box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
                 border-radius: 4px;
                 z-index: 10000;
-                min-width: 120px;
+                min-width: 140px;
             }
 
             #chat-helper-context-menu .menu-item {
@@ -731,12 +971,14 @@ const UI = {
             #chat-helper-management-modal .modal-body {
                 padding: 16px;
                 overflow-y: auto;
+                flex: 1;
             }
 
             #chat-helper-management-modal .tabs {
                 display: flex;
                 gap: 8px;
                 margin-bottom: 16px;
+                flex-wrap: wrap;
             }
 
             #chat-helper-management-modal .tab {
@@ -759,6 +1001,34 @@ const UI = {
 
             #chat-helper-management-modal .tab-content.hidden {
                 display: none;
+            }
+
+            #chat-helper-management-modal .settings-section {
+                margin-bottom: 20px;
+            }
+
+            #chat-helper-management-modal .settings-section h3 {
+                margin: 0 0 12px 0;
+                color: #333;
+            }
+
+            #chat-helper-management-modal .setting-item {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 8px;
+                cursor: pointer;
+            }
+
+            #chat-helper-management-modal .setting-item input[type="checkbox"] {
+                width: 18px;
+                height: 18px;
+            }
+
+            #chat-helper-management-modal .setting-desc {
+                margin: 0 0 16px 26px;
+                color: #666;
+                font-size: 12px;
             }
 
             #chat-helper-management-modal .template-list {
@@ -829,6 +1099,7 @@ const StampLoader = {
 
     autoLoadStamps(iframe) {
         if (this.loaded) return;
+        if (!Settings.get().autoLoadStamps) return;
 
         const emojiButton = Utils.safeQuerySelector(
             iframe.contentDocument,
@@ -840,13 +1111,17 @@ const StampLoader = {
             return;
         }
 
-        // 2回クリックして開閉
         setTimeout(() => {
-            emojiButton.click(); // 開く
+            emojiButton.click();
             setTimeout(() => {
-                emojiButton.click(); // 閉じる
+                emojiButton.click();
                 this.loaded = true;
                 console.log("スタンプを自動読み込みしました。");
+
+                // CCPPP初期化（スタンプ読み込み後）
+                setTimeout(() => {
+                    CCPPP.init(iframe);
+                }, 500);
             }, 500);
         }, 1000);
     }
@@ -858,13 +1133,12 @@ const ChatHelper = {
     observer: null,
 
     init() {
-        console.log("YouTube Chat Helper を初期化中...");
+        console.log("YouTube Chat Helper v2.1 を初期化中...");
         UI.addMainPageStyles();
         this.observeDOM();
         this.checkForChatFrame();
     },
 
-    // MutationObserverでDOM変更を監視
     observeDOM() {
         if (this.observer) this.observer.disconnect();
 
@@ -879,7 +1153,6 @@ const ChatHelper = {
             subtree: true
         });
 
-        // URL変更の監視（History API）
         let lastUrl = location.href;
         const urlObserver = new MutationObserver(() => {
             if (location.href !== lastUrl) {
@@ -896,7 +1169,6 @@ const ChatHelper = {
         });
     },
 
-    // チャットフレームの検索と初期化
     checkForChatFrame() {
         const chatFrame = document.querySelector("iframe#chatframe");
         if (!chatFrame) return;
@@ -906,7 +1178,6 @@ const ChatHelper = {
                 this.initializeFrame(chatFrame);
             });
 
-            // 既にロード済みの場合
             if (chatFrame.contentDocument?.readyState === "complete") {
                 this.initializeFrame(chatFrame);
             }
@@ -917,13 +1188,8 @@ const ChatHelper = {
         console.log("チャットフレームを初期化中...");
         this.initialized = true;
 
-        // スタイルの追加
         UI.addStyles(iframe);
-
-        // ボタンのセットアップ
         UI.setupChatButtons(iframe);
-
-        // スタンプの自動読み込み
         StampLoader.autoLoadStamps(iframe);
 
         console.log("YouTube Chat Helper の初期化完了！");
