@@ -513,23 +513,10 @@ const UI = {
         }, "save-btn");
         buttonWrapper.appendChild(saveButton);
 
-        // グローバル保存ボタン
-        const saveGlobalButton = this.createButton("save-global-btn", "Global", () => {
-            const data = this.readChatInput(iframe);
-            if (data && data.length > 0) {
-                Storage.saveTemplate(data, true);
-                this.setupChatButtons(iframe);
-            }
-        }, "save-btn global-btn");
-        buttonWrapper.appendChild(saveGlobalButton);
-
-        // 設定ボタン
-        const manageButton = this.createButton("manage-templates-btn", "Settings", () => {
-            this.showSettingsUI();
-        }, "manage-btn");
-        buttonWrapper.appendChild(manageButton);
-
         chatContainer.appendChild(buttonWrapper);
+
+        // ドラッグ＆ドロップを設定
+        this.setupButtonDragAndDrop(iframe);
     },
 
     createTemplateButton(entry, index, channelName, iframe, isGlobal) {
@@ -537,8 +524,14 @@ const UI = {
             `template-btn-${isGlobal ? "g" : "c"}-${index}`,
             entry.content,
             () => this.insertTemplate(entry.content, iframe),
-            isGlobal ? "template-btn global" : "template-btn"
+            isGlobal ? "template-btn global draggable" : "template-btn draggable"
         );
+
+        // ドラッグ可能にする
+        btn.draggable = true;
+        btn.dataset.channelName = channelName;
+        btn.dataset.index = index;
+        btn.dataset.isGlobal = isGlobal;
 
         btn.addEventListener("contextmenu", (event) => {
             event.preventDefault();
@@ -546,6 +539,62 @@ const UI = {
         });
 
         return btn;
+    },
+
+    setupButtonDragAndDrop(iframe) {
+        const wrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
+        if (!wrapper) return;
+
+        let draggedBtn = null;
+
+        wrapper.querySelectorAll("button.draggable").forEach(btn => {
+            btn.addEventListener("dragstart", (e) => {
+                draggedBtn = btn;
+                btn.classList.add("dragging");
+                e.dataTransfer.effectAllowed = "move";
+            });
+
+            btn.addEventListener("dragend", () => {
+                btn.classList.remove("dragging");
+                draggedBtn = null;
+            });
+
+            btn.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                if (!draggedBtn || draggedBtn === btn) return;
+
+                // 同じカテゴリ（グローバル/ローカル）のみ並び替え可能
+                if (draggedBtn.dataset.isGlobal !== btn.dataset.isGlobal) return;
+
+                const rect = btn.getBoundingClientRect();
+                const midX = rect.left + rect.width / 2;
+
+                if (e.clientX < midX) {
+                    wrapper.insertBefore(draggedBtn, btn);
+                } else {
+                    wrapper.insertBefore(draggedBtn, btn.nextSibling);
+                }
+            });
+
+            btn.addEventListener("drop", (e) => {
+                e.preventDefault();
+                if (!draggedBtn) return;
+
+                // 新しい順番を保存
+                const channelName = draggedBtn.dataset.channelName;
+                const oldIndex = parseInt(draggedBtn.dataset.index);
+                const isGlobal = draggedBtn.dataset.isGlobal === "true";
+
+                // 同じカテゴリのボタンを取得して新しいインデックスを計算
+                const sameTypeButtons = Array.from(wrapper.querySelectorAll(`button.draggable[data-is-global="${isGlobal}"]`));
+                const newIndex = sameTypeButtons.indexOf(draggedBtn);
+
+                if (oldIndex !== newIndex && newIndex >= 0) {
+                    Storage.reorderTemplate(channelName, oldIndex, newIndex);
+                    this.setupChatButtons(iframe);
+                }
+            });
+        });
     },
 
     showContextMenu(event, channelName, index, iframe, isGlobal) {
@@ -860,20 +909,25 @@ const UI = {
                 opacity: 0.8;
             }
 
+            #chat-helper-buttons button.draggable {
+                cursor: grab;
+            }
+
+            #chat-helper-buttons button.draggable:active {
+                cursor: grabbing;
+            }
+
+            #chat-helper-buttons button.dragging {
+                opacity: 0.5;
+            }
+
             #chat-helper-buttons button.template-btn.global {
                 background-color: #9c27b0;
             }
 
             #chat-helper-buttons button.save-btn {
                 background-color: #4caf50;
-            }
-
-            #chat-helper-buttons button.save-btn.global-btn {
-                background-color: #ff9800;
-            }
-
-            #chat-helper-buttons button.manage-btn {
-                background-color: #607d8b;
+                cursor: pointer;
             }
 
             #input-panel #container {
