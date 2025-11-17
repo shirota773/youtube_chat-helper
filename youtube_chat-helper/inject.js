@@ -673,12 +673,16 @@ const UI = {
         `;
 
         const toggleText = isGlobal ? "ローカルに移動" : "グローバルに移動";
-        menu.innerHTML = `
-            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">削除</div>
-            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">${toggleText}</div>
-            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">上に移動</div>
-            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">下に移動</div>
-        `;
+        const menuLabels = ["削除", toggleText, "上に移動", "下に移動"];
+
+        // DOM APIを使用してメニュー項目を作成（Trusted Types対応）
+        menuLabels.forEach(label => {
+            const item = document.createElement("div");
+            item.className = "menu-item";
+            item.textContent = label;
+            item.style.cssText = "padding: 8px 12px; cursor: pointer; font-size: 14px;";
+            menu.appendChild(item);
+        });
 
         // メニューをiframe内に表示（座標計算がシンプルになる）
         menu.style.left = `${event.clientX}px`;
