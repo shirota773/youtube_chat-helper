@@ -357,9 +357,9 @@ const CCPPP = {
 
         if (!inputField) return;
 
-        // テキストノードを検索
+        // テキストノードを検索（iframe内のdocumentを使用）
         const textNodes = [];
-        const walker = document.createTreeWalker(
+        const walker = iframe.contentDocument.createTreeWalker(
             inputField,
             NodeFilter.SHOW_TEXT,
             null,
@@ -386,7 +386,7 @@ const CCPPP = {
                     hasEmoji = true;
                     // マッチ前のテキスト
                     if (match.index > lastIndex) {
-                        fragments.push(document.createTextNode(text.slice(lastIndex, match.index)));
+                        fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex, match.index)));
                     }
                     // 絵文字ボタン
                     const btn = this.createEmojiButton(emojiName, iframe);
@@ -398,7 +398,7 @@ const CCPPP = {
             if (hasEmoji) {
                 // 残りのテキスト
                 if (lastIndex < text.length) {
-                    fragments.push(document.createTextNode(text.slice(lastIndex)));
+                    fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex)));
                 }
                 // ノードを置換
                 const parent = textNode.parentNode;
@@ -409,7 +409,7 @@ const CCPPP = {
     },
 
     createEmojiButton(emojiName, iframe) {
-        const btn = document.createElement("button");
+        const btn = iframe.contentDocument.createElement("button");
         btn.className = "ccppp-emoji-btn";
         btn.textContent = `:${emojiName}:`;
         btn.style.cssText = `

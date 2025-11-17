@@ -1,16 +1,26 @@
 {
   "manifest_version": 3,
   "name": "YouTube Chat Helper",
-  "version": "2.2",
+  "version": "2.3",
   "description": "Save and manage YouTube chat stamp templates with global and channel-specific support",
   "permissions": ["storage"],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://holodex.net/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "YouTube Chat Helper Settings"
+    "default_title": "YouTube Chat Helper Settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {
