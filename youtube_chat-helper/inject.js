@@ -25,15 +25,46 @@ const Utils = {
     },
 
     getChannelInfo() {
-        const channelElement = this.safeQuerySelector(
+        // YouTube用
+        let channelElement = this.safeQuerySelector(
             document,
             "ytd-channel-name#channel-name yt-formatted-string#text a"
         );
-        if (!channelElement) return null;
-        return {
-            name: channelElement.innerText.trim(),
-            href: channelElement.href
-        };
+
+        if (channelElement) {
+            return {
+                name: channelElement.innerText.trim(),
+                href: channelElement.href
+            };
+        }
+
+        // Holodex用
+        channelElement = this.safeQuerySelector(
+            document,
+            ".channel-name a, .video-channel a, [class*='channel'] a"
+        );
+
+        if (channelElement) {
+            return {
+                name: channelElement.innerText.trim(),
+                href: channelElement.href
+            };
+        }
+
+        // URLからチャンネル情報を取得（フォールバック）
+        const url = window.location.href;
+        if (url.includes("holodex.net")) {
+            // Holodexの場合、ページタイトルやURLから推測
+            const titleElement = this.safeQuerySelector(document, "h1, .video-title, title");
+            if (titleElement) {
+                return {
+                    name: "Holodex_" + (titleElement.innerText || "Unknown").trim().slice(0, 30),
+                    href: url
+                };
+            }
+        }
+
+        return null;
     },
 
     debounce(func, wait) {
@@ -612,28 +643,44 @@ const UI = {
             <div class="menu-item move-down-item">下に移動</div>
         `;
 
-        const rect = iframe.getBoundingClientRect();
-        menu.style.left = `${event.clientX + rect.left + window.scrollX}px`;
-        menu.style.top = `${event.clientY + rect.top + window.scrollY}px`;
+        // iframeの位置を考慮した座標計算
+        const iframeRect = iframe.getBoundingClientRect();
+        const menuX = iframeRect.left + event.clientX + window.scrollX;
+        const menuY = iframeRect.top + event.clientY + window.scrollY;
+
+        menu.style.left = `${menuX}px`;
+        menu.style.top = `${menuY}px`;
 
         document.body.appendChild(menu);
 
+        // メニューが画面外に出ないように調整
+        const menuRect = menu.getBoundingClientRect();
+        if (menuRect.right > window.innerWidth) {
+            menu.style.left = `${menuX - menuRect.width}px`;
+        }
+        if (menuRect.bottom > window.innerHeight) {
+            menu.style.top = `${menuY - menuRect.height}px`;
+        }
+
         // 削除
-        menu.querySelector(".delete-item").addEventListener("click", () => {
+        menu.querySelector(".delete-item").addEventListener("click", (e) => {
+            e.stopPropagation();
             Storage.deleteTemplate(channelName, index);
             this.setupChatButtons(iframe);
             menu.remove();
         });
 
         // グローバル/ローカル切り替え
-        menu.querySelector(".toggle-scope-item").addEventListener("click", () => {
+        menu.querySelector(".toggle-scope-item").addEventListener("click", (e) => {
+            e.stopPropagation();
             Storage.moveTemplate(channelName, index, !isGlobal);
             this.setupChatButtons(iframe);
             menu.remove();
         });
 
         // 上に移動
-        menu.querySelector(".move-up-item").addEventListener("click", () => {
+        menu.querySelector(".move-up-item").addEventListener("click", (e) => {
+            e.stopPropagation();
             if (index > 0) {
                 Storage.reorderTemplate(channelName, index, index - 1);
                 this.setupChatButtons(iframe);
@@ -642,18 +689,37 @@ const UI = {
         });
 
         // 下に移動
-        menu.querySelector(".move-down-item").addEventListener("click", () => {
+        menu.querySelector(".move-down-item").addEventListener("click", (e) => {
+            e.stopPropagation();
             Storage.reorderTemplate(channelName, index, index + 1);
             this.setupChatButtons(iframe);
             menu.remove();
         });
 
-        const closeMenu = () => {
-            if (document.body.contains(menu)) menu.remove();
+        const closeMenu = (e) => {
+            if (document.body.contains(menu) && !menu.contains(e.target)) {
+                menu.remove();
+            }
         };
+
+        // メニュー外クリックで閉じる
         setTimeout(() => {
-            document.addEventListener("click", closeMenu, { once: true });
-            iframe.contentDocument.addEventListener("click", closeMenu, { once: true });
+            document.addEventListener("click", closeMenu);
+            iframe.contentDocument.addEventListener("click", closeMenu);
+
+            // 一度閉じたらリスナーを削除
+            const cleanup = () => {
+                document.removeEventListener("click", closeMenu);
+                iframe.contentDocument.removeEventListener("click", closeMenu);
+            };
+
+            const observer = new MutationObserver(() => {
+                if (!document.body.contains(menu)) {
+                    cleanup();
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
         }, 10);
     },
 

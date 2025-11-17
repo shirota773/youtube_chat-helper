@@ -1,13 +1,19 @@
 {
   "manifest_version": 3,
   "name": "YouTube Chat Helper",
-  "version": "2.0",
+  "version": "2.1",
   "description": "Save and manage YouTube chat stamp templates with global and channel-specific support",
   "permissions": ["storage"],
-  "host_permissions": ["https://www.youtube.com/*"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://holodex.net/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://holodex.net/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_start"
     }
@@ -15,7 +21,10 @@
   "web_accessible_resources": [
     {
       "resources": ["inject.js"],
-      "matches": ["https://www.youtube.com/*"]
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://holodex.net/*"
+      ]
     }
   ]
 }
