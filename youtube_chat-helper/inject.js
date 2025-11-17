@@ -564,10 +564,13 @@ const UI = {
         btn.dataset.index = index;
         btn.dataset.isGlobal = isGlobal;
 
-        btn.addEventListener("contextmenu", (event) => {
+        // 右クリックメニュー
+        btn.oncontextmenu = (event) => {
             event.preventDefault();
+            event.stopPropagation();
             this.showContextMenu(event, channelName, index, iframe, isGlobal);
-        });
+            return false;
+        };
 
         return btn;
     },
@@ -696,31 +699,17 @@ const UI = {
             menu.remove();
         });
 
-        const closeMenu = (e) => {
-            if (document.body.contains(menu) && !menu.contains(e.target)) {
+        // メニュー外クリックで閉じる
+        const closeMenu = () => {
+            if (document.body.contains(menu)) {
                 menu.remove();
             }
         };
 
-        // メニュー外クリックで閉じる
         setTimeout(() => {
-            document.addEventListener("click", closeMenu);
-            iframe.contentDocument.addEventListener("click", closeMenu);
-
-            // 一度閉じたらリスナーを削除
-            const cleanup = () => {
-                document.removeEventListener("click", closeMenu);
-                iframe.contentDocument.removeEventListener("click", closeMenu);
-            };
-
-            const observer = new MutationObserver(() => {
-                if (!document.body.contains(menu)) {
-                    cleanup();
-                    observer.disconnect();
-                }
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
-        }, 10);
+            document.addEventListener("click", closeMenu, { once: true });
+            iframe.contentDocument.addEventListener("click", closeMenu, { once: true });
+        }, 100);
     },
 
     showSettingsUI() {
@@ -976,15 +965,12 @@ const UI = {
             }
 
             #chat-helper-buttons button.draggable {
-                cursor: grab;
-            }
-
-            #chat-helper-buttons button.draggable:active {
-                cursor: grabbing;
+                cursor: pointer;
             }
 
             #chat-helper-buttons button.dragging {
                 opacity: 0.5;
+                cursor: grabbing;
             }
 
             #chat-helper-buttons button.template-btn.global {
