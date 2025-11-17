@@ -88,6 +88,12 @@ const Settings = {
     },
 
     get() {
+        // content.jsから注入された設定を優先
+        if (window.__CHAT_HELPER_SETTINGS__) {
+            return { ...this.defaults, ...window.__CHAT_HELPER_SETTINGS__ };
+        }
+
+        // フォールバック: localStorageから読み込み
         try {
             const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
             return { ...this.defaults, ...saved };
@@ -97,6 +103,10 @@ const Settings = {
     },
 
     save(settings) {
+        // グローバル変数を更新
+        window.__CHAT_HELPER_SETTINGS__ = settings;
+
+        // localStorageにも保存（バックアップ）
         try {
             localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
             return true;
@@ -110,6 +120,14 @@ const Settings = {
         const settings = this.get();
         settings[key] = value;
         return this.save(settings);
+    },
+
+    // 設定変更イベントのリスナー
+    listenForChanges(callback) {
+        window.addEventListener("chatHelperSettingsChanged", (e) => {
+            window.__CHAT_HELPER_SETTINGS__ = e.detail;
+            callback(e.detail);
+        });
     }
 };
 
@@ -586,11 +604,15 @@ const UI = {
                 draggedBtn = btn;
                 btn.classList.add("dragging");
                 e.dataTransfer.effectAllowed = "move";
+                // ドラッグ中のカーソルを設定
+                iframe.contentDocument.body.style.cursor = "grabbing";
             });
 
             btn.addEventListener("dragend", () => {
                 btn.classList.remove("dragging");
                 draggedBtn = null;
+                // カーソルを元に戻す
+                iframe.contentDocument.body.style.cursor = "";
             });
 
             btn.addEventListener("dragover", (e) => {
@@ -632,41 +654,64 @@ const UI = {
     },
 
     showContextMenu(event, channelName, index, iframe, isGlobal) {
-        const existingMenu = document.querySelector("#chat-helper-context-menu");
+        // 既存のメニューを削除（iframe内と親ドキュメント両方）
+        const existingMenu = iframe.contentDocument.querySelector("#chat-helper-context-menu");
         if (existingMenu) existingMenu.remove();
+        const existingMenuParent = document.querySelector("#chat-helper-context-menu");
+        if (existingMenuParent) existingMenuParent.remove();
 
         const menu = document.createElement("div");
         menu.id = "chat-helper-context-menu";
+        menu.style.cssText = `
+            position: fixed;
+            background: white;
+            border: 1px solid #ccc;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            z-index: 10000;
+            min-width: 140px;
+        `;
 
         const toggleText = isGlobal ? "ローカルに移動" : "グローバルに移動";
         menu.innerHTML = `
-            <div class="menu-item delete-item">削除</div>
-            <div class="menu-item toggle-scope-item">${toggleText}</div>
-            <div class="menu-item move-up-item">上に移動</div>
-            <div class="menu-item move-down-item">下に移動</div>
+            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">削除</div>
+            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">${toggleText}</div>
+            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">上に移動</div>
+            <div class="menu-item" style="padding: 8px 12px; cursor: pointer; font-size: 14px;">下に移動</div>
         `;
 
-        // iframeの位置を考慮した座標計算
-        const iframeRect = iframe.getBoundingClientRect();
-        const menuX = iframeRect.left + event.clientX + window.scrollX;
-        const menuY = iframeRect.top + event.clientY + window.scrollY;
+        // メニューをiframe内に表示（座標計算がシンプルになる）
+        menu.style.left = `${event.clientX}px`;
+        menu.style.top = `${event.clientY}px`;
 
-        menu.style.left = `${menuX}px`;
-        menu.style.top = `${menuY}px`;
-
-        document.body.appendChild(menu);
+        iframe.contentDocument.body.appendChild(menu);
 
         // メニューが画面外に出ないように調整
         const menuRect = menu.getBoundingClientRect();
-        if (menuRect.right > window.innerWidth) {
-            menu.style.left = `${menuX - menuRect.width}px`;
+        const iframeWidth = iframe.contentWindow.innerWidth;
+        const iframeHeight = iframe.contentWindow.innerHeight;
+
+        if (menuRect.right > iframeWidth) {
+            menu.style.left = `${event.clientX - menuRect.width}px`;
         }
-        if (menuRect.bottom > window.innerHeight) {
-            menu.style.top = `${menuY - menuRect.height}px`;
+        if (menuRect.bottom > iframeHeight) {
+            menu.style.top = `${event.clientY - menuRect.height}px`;
         }
 
+        // ホバー効果
+        menu.querySelectorAll(".menu-item").forEach(item => {
+            item.addEventListener("mouseenter", () => {
+                item.style.backgroundColor = "#f0f0f0";
+            });
+            item.addEventListener("mouseleave", () => {
+                item.style.backgroundColor = "white";
+            });
+        });
+
+        const menuItems = menu.querySelectorAll(".menu-item");
+
         // 削除
-        menu.querySelector(".delete-item").addEventListener("click", (e) => {
+        menuItems[0].addEventListener("click", (e) => {
             e.stopPropagation();
             Storage.deleteTemplate(channelName, index);
             this.setupChatButtons(iframe);
@@ -674,7 +719,7 @@ const UI = {
         });
 
         // グローバル/ローカル切り替え
-        menu.querySelector(".toggle-scope-item").addEventListener("click", (e) => {
+        menuItems[1].addEventListener("click", (e) => {
             e.stopPropagation();
             Storage.moveTemplate(channelName, index, !isGlobal);
             this.setupChatButtons(iframe);
@@ -682,7 +727,7 @@ const UI = {
         });
 
         // 上に移動
-        menu.querySelector(".move-up-item").addEventListener("click", (e) => {
+        menuItems[2].addEventListener("click", (e) => {
             e.stopPropagation();
             if (index > 0) {
                 Storage.reorderTemplate(channelName, index, index - 1);
@@ -692,7 +737,7 @@ const UI = {
         });
 
         // 下に移動
-        menu.querySelector(".move-down-item").addEventListener("click", (e) => {
+        menuItems[3].addEventListener("click", (e) => {
             e.stopPropagation();
             Storage.reorderTemplate(channelName, index, index + 1);
             this.setupChatButtons(iframe);
@@ -701,14 +746,14 @@ const UI = {
 
         // メニュー外クリックで閉じる
         const closeMenu = () => {
-            if (document.body.contains(menu)) {
+            if (iframe.contentDocument.body.contains(menu)) {
                 menu.remove();
             }
         };
 
         setTimeout(() => {
-            document.addEventListener("click", closeMenu, { once: true });
             iframe.contentDocument.addEventListener("click", closeMenu, { once: true });
+            document.addEventListener("click", closeMenu, { once: true });
         }, 100);
     },
 
@@ -1239,10 +1284,21 @@ const ChatHelper = {
     observer: null,
 
     init() {
-        console.log("YouTube Chat Helper v2.1 を初期化中...");
+        console.log("YouTube Chat Helper v2.2 を初期化中...");
         UI.addMainPageStyles();
         this.observeDOM();
         this.checkForChatFrame();
+
+        // 設定変更を監視
+        Settings.listenForChanges((newSettings) => {
+            console.log("設定が変更されました:", newSettings);
+            CCPPP.enabled = newSettings.ccpppEnabled;
+
+            // CCPPPが有効になった場合、再初期化
+            if (newSettings.ccpppEnabled && UI.currentIframe) {
+                CCPPP.init(UI.currentIframe);
+            }
+        });
     },
 
     observeDOM() {
