@@ -6,12 +6,13 @@ const defaultSettings = {
     autoLoadStamps: true
 };
 
-// 設定をページに注入
+// 設定をページに注入（DOM属性を使用してCSP違反を回避）
 function injectSettings(settings) {
-    const script = document.createElement("script");
-    script.textContent = `window.__CHAT_HELPER_SETTINGS__ = ${JSON.stringify(settings)};`;
-    document.documentElement.appendChild(script);
-    script.remove();
+    const settingsElement = document.createElement("div");
+    settingsElement.id = "__chat_helper_settings__";
+    settingsElement.style.display = "none";
+    settingsElement.setAttribute("data-settings", JSON.stringify(settings));
+    document.documentElement.appendChild(settingsElement);
 }
 
 // メインスクリプトを注入
