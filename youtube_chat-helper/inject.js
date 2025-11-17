@@ -1268,6 +1268,7 @@ const StampLoader = {
 const ChatHelper = {
     initialized: false,
     observer: null,
+    initializedIframes: new WeakSet(), // 初期化済みiframeを追跡
 
     init() {
         console.log("YouTube Chat Helper v2.4 を初期化中...");
@@ -1290,70 +1291,92 @@ const ChatHelper = {
     observeDOM() {
         if (this.observer) this.observer.disconnect();
 
-        this.observer = new MutationObserver(
-            Utils.debounce(() => {
+        // iframeの追加を監視
+        this.observer = new MutationObserver((mutations) => {
+            let shouldCheck = false;
+
+            for (const mutation of mutations) {
+                // 新しいノードが追加された場合
+                if (mutation.type === "childList") {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === 1) { // ELEMENT_NODE
+                            // 追加されたノードがiframeか、iframeを含むか確認
+                            if (node.tagName === "IFRAME" || node.querySelector?.("iframe")) {
+                                shouldCheck = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (shouldCheck) {
                 this.checkForChatFrame();
-            }, 500)
-        );
+            }
+        });
 
         this.observer.observe(document.body, {
             childList: true,
             subtree: true
         });
 
+        // URL変更の監視
         let lastUrl = location.href;
-        const urlObserver = new MutationObserver(() => {
+        setInterval(() => {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
                 this.initialized = false;
+                this.initializedIframes = new WeakSet();
                 StampLoader.loaded = false;
                 this.checkForChatFrame();
             }
-        });
-
-        urlObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        }, 1000);
     },
 
     checkForChatFrame() {
-        // YouTube用
-        let chatFrame = document.querySelector("iframe#chatframe");
+        // すべてのiframeをチェック
+        const iframes = document.querySelectorAll("iframe");
 
-        // Holodex用（複数のセレクタを試す）
-        if (!chatFrame) {
-            chatFrame = document.querySelector("iframe[src*='youtube.com/live_chat']");
-        }
-        if (!chatFrame) {
-            // Holodexではiframeが動的に追加される可能性がある
-            const iframes = document.querySelectorAll("iframe");
-            for (const iframe of iframes) {
-                try {
-                    if (iframe.src && iframe.src.includes("youtube.com/live_chat")) {
-                        chatFrame = iframe;
-                        break;
-                    }
-                } catch (e) {
-                    // エラーを無視
-                }
-            }
-        }
-
-        if (!chatFrame) return;
-
-        if (!this.initialized) {
-            chatFrame.addEventListener("load", () => {
-                this.initializeFrame(chatFrame);
-            });
+        for (const iframe of iframes) {
+            // 既に初期化済みならスキップ
+            if (this.initializedIframes.has(iframe)) continue;
 
             try {
-                if (chatFrame.contentDocument?.readyState === "complete") {
-                    this.initializeFrame(chatFrame);
+                const src = iframe.src || iframe.getAttribute("src") || "";
+
+                // YouTube Live Chatのiframeかチェック
+                // YouTube: iframe#chatframe
+                // Holodex: iframe[src*="youtube.com/live_chat"]
+                const isYouTubeChat = iframe.id === "chatframe" ||
+                                      src.includes("youtube.com/live_chat");
+
+                if (isYouTubeChat) {
+                    console.log("チャットiframeを検出:", src || iframe.id);
+
+                    // loadイベントを設定
+                    iframe.addEventListener("load", () => {
+                        if (!this.initializedIframes.has(iframe)) {
+                            this.initializeFrame(iframe);
+                            this.initializedIframes.add(iframe);
+                        }
+                    });
+
+                    // 既にロード済みの場合
+                    try {
+                        if (iframe.contentDocument?.readyState === "complete") {
+                            if (!this.initializedIframes.has(iframe)) {
+                                this.initializeFrame(iframe);
+                                this.initializedIframes.add(iframe);
+                            }
+                        }
+                    } catch (e) {
+                        // クロスオリジンの場合、loadイベントを待つ
+                        console.log("チャットフレームのloadイベントを待機中...");
+                    }
                 }
             } catch (e) {
-                // クロスオリジンの場合、loadイベントを待つ
-                console.log("チャットフレームのloadイベントを待機中...");
+                // エラーを無視
+                console.warn("iframe検査エラー:", e);
             }
         }
     },
