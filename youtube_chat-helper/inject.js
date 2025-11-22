@@ -1383,19 +1383,35 @@ const ChatHelper = {
     const chatFrame = document.querySelector("iframe#chatframe");
     if (!chatFrame) return;
 
-    if (!this.initialized) {
+    // 既に初期化済みかチェック
+    let hasButtons = false;
+    try {
+      if (chatFrame.contentDocument) {
+        hasButtons = chatFrame.contentDocument.querySelector("#chat-helper-buttons") !== null;
+      }
+    } catch (e) {
+      // クロスオリジンの場合は確認できない
+    }
+
+    if (this.initialized && hasButtons) {
+      return; // 既に初期化済みでボタンも存在
+    }
+
+    if (!chatFrame.dataset.chatHelperListenerAdded) {
       chatFrame.addEventListener("load", () => {
+        this.initialized = false; // リロード時にフラグをクリア
         this.initializeFrame(chatFrame);
       });
+      chatFrame.dataset.chatHelperListenerAdded = "true";
+    }
 
-      try {
-        if (chatFrame.contentDocument?.readyState === "complete") {
-          this.initializeFrame(chatFrame);
-        }
-      } catch (e) {
-        // クロスオリジンの場合、loadイベントを待つ
-        console.log("チャットフレームのloadイベントを待機中...");
+    try {
+      if (chatFrame.contentDocument?.readyState === "complete") {
+        this.initializeFrame(chatFrame);
       }
+    } catch (e) {
+      // クロスオリジンの場合、loadイベントを待つ
+      console.log("チャットフレームのloadイベントを待機中...");
     }
   },
 
@@ -1428,18 +1444,38 @@ const ChatHelper = {
       console.log(`Holodex: チャットフレーム #${index} の処理開始`);
       const frameId = `holodex-chat-${index}`;
 
-      // すでに初期化済みかチェック
-      if (chatFrame.dataset.chatHelperInitialized === "true") {
-        console.log(`Holodex: チャットフレーム #${index} は既に初期化済み`);
+      // 初期化済みかチェック - iframe内にボタンが存在するかで確認
+      const isInitialized = chatFrame.dataset.chatHelperInitialized === "true";
+      let hasButtons = false;
+
+      try {
+        if (chatFrame.contentDocument) {
+          hasButtons = chatFrame.contentDocument.querySelector("#chat-helper-buttons") !== null;
+        }
+      } catch (e) {
+        // クロスオリジンの場合は確認できない
+      }
+
+      if (isInitialized && hasButtons) {
+        console.log(`Holodex: チャットフレーム #${index} は既に初期化済みでボタンも存在`);
         return;
       }
 
-      // loadイベントリスナーを追加
-      chatFrame.addEventListener("load", () => {
-        console.log(`Holodex: チャットフレーム #${index} をロード（loadイベント）`);
-        this.initializeFrameSafe(chatFrame, frameId);
-      });
-      console.log(`Holodex: チャットフレーム #${index} にloadイベントリスナーを追加`);
+      if (isInitialized && !hasButtons) {
+        console.log(`Holodex: チャットフレーム #${index} はフラグが立っているがボタンが無い - 再初期化`);
+        chatFrame.dataset.chatHelperInitialized = "false";
+      }
+
+      // loadイベントリスナーを追加（重複しないようにチェック）
+      if (!chatFrame.dataset.chatHelperListenerAdded) {
+        chatFrame.addEventListener("load", () => {
+          console.log(`Holodex: チャットフレーム #${index} をロード（loadイベント）`);
+          chatFrame.dataset.chatHelperInitialized = "false"; // リロード時にフラグをクリア
+          this.initializeFrameSafe(chatFrame, frameId);
+        });
+        chatFrame.dataset.chatHelperListenerAdded = "true";
+        console.log(`Holodex: チャットフレーム #${index} にloadイベントリスナーを追加`);
+      }
 
       // すでにロード済みの場合は即座に初期化
       try {
@@ -1449,7 +1485,7 @@ const ChatHelper = {
         if (readyState === "complete") {
           console.log(`Holodex: チャットフレーム #${index} は既にロード済み`);
           this.initializeFrameSafe(chatFrame, frameId);
-        } else {
+        } else if (readyState) {
           console.log(`Holodex: チャットフレーム #${index} はまだロード中、loadイベントを待機`);
         }
       } catch (e) {
@@ -1462,12 +1498,16 @@ const ChatHelper = {
   initializeFrameSafe(iframe, frameId) {
     console.log(`initializeFrameSafe: ${frameId} の初期化開始`);
 
-    // 初期化済みマークを付ける
-    iframe.dataset.chatHelperInitialized = "true";
-    console.log(`initializeFrameSafe: ${frameId} に初期化済みマークを設定`);
+    // フレームを初期化（戻り値で成功/失敗を判定）
+    const success = this.initializeFrame(iframe);
 
-    // フレームを初期化
-    this.initializeFrame(iframe);
+    if (success) {
+      // 初期化成功時のみマークを付ける
+      iframe.dataset.chatHelperInitialized = "true";
+      console.log(`initializeFrameSafe: ${frameId} の初期化成功、マークを設定`);
+    } else {
+      console.warn(`initializeFrameSafe: ${frameId} の初期化失敗`);
+    }
   },
 
   initializeFrame(iframe) {
@@ -1477,22 +1517,30 @@ const ChatHelper = {
     if (!iframe.contentDocument) {
       console.warn("initializeFrame: iframe.contentDocument is null, cannot initialize frame");
       this.initialized = false;
-      return;
+      return false; // 失敗を返す
     }
 
     console.log("initializeFrame: iframe.contentDocument が有効です");
-    this.initialized = true;
 
-    console.log("initializeFrame: UI.addStyles を呼び出し");
-    UI.addStyles(iframe);
+    try {
+      this.initialized = true;
 
-    console.log("initializeFrame: UI.setupChatButtons を呼び出し");
-    UI.setupChatButtons(iframe);
+      console.log("initializeFrame: UI.addStyles を呼び出し");
+      UI.addStyles(iframe);
 
-    console.log("initializeFrame: StampLoader.autoLoadStamps を呼び出し");
-    StampLoader.autoLoadStamps(iframe);
+      console.log("initializeFrame: UI.setupChatButtons を呼び出し");
+      UI.setupChatButtons(iframe);
 
-    console.log("initializeFrame: YouTube Chat Helper の初期化完了！");
+      console.log("initializeFrame: StampLoader.autoLoadStamps を呼び出し");
+      StampLoader.autoLoadStamps(iframe);
+
+      console.log("initializeFrame: YouTube Chat Helper の初期化完了！");
+      return true; // 成功を返す
+    } catch (e) {
+      console.error("initializeFrame: 初期化中にエラーが発生:", e);
+      this.initialized = false;
+      return false; // 失敗を返す
+    }
   }
 };
 
