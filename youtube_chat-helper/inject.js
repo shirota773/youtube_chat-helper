@@ -267,6 +267,42 @@ const Storage = {
     return this.saveData(data);
   },
 
+  // エイリアスを設定
+  setAlias(channelName, index, alias) {
+    const data = this.getData();
+    let template;
+
+    if (channelName === GLOBAL_CHANNEL_KEY) {
+      if (!data.global || !data.global[index]) return false;
+      template = data.global[index];
+    } else {
+      const channel = data.channels.find(ch => ch.name === channelName);
+      if (!channel || !channel.data[index]) return false;
+      template = channel.data[index];
+    }
+
+    template.alias = alias;
+    return this.saveData(data);
+  },
+
+  // エイリアスを削除
+  removeAlias(channelName, index) {
+    const data = this.getData();
+    let template;
+
+    if (channelName === GLOBAL_CHANNEL_KEY) {
+      if (!data.global || !data.global[index]) return false;
+      template = data.global[index];
+    } else {
+      const channel = data.channels.find(ch => ch.name === channelName);
+      if (!channel || !channel.data[index]) return false;
+      template = channel.data[index];
+    }
+
+    delete template.alias;
+    return this.saveData(data);
+  },
+
   generateCaption(content) {
     return content.map(item => {
       if (typeof item === "string") return item;
@@ -588,11 +624,20 @@ const UI = {
   },
 
   createTemplateButton(entry, index, channelName, iframe, isGlobal) {
+    // エイリアスがある場合はそれを表示、なければ元のコンテンツを表示
+    const displayContent = entry.alias || entry.content;
+    const hasAlias = !!entry.alias;
+
+    let className = isGlobal ? "template-btn global draggable" : "template-btn draggable";
+    if (hasAlias) {
+      className += " aliased";
+    }
+
     const btn = this.createButton(
       `template-btn-${isGlobal ? "g" : "c"}-${index}`,
-      entry.content,
+      displayContent,
       () => this.insertTemplate(entry.content, iframe),
-      isGlobal ? "template-btn global draggable" : "template-btn draggable"
+      className
     );
 
     // ドラッグ可能にする
@@ -679,6 +724,17 @@ const UI = {
     const existingMenuParent = document.querySelector("#chat-helper-context-menu");
     if (existingMenuParent) existingMenuParent.remove();
 
+    // 現在のテンプレートを取得してエイリアスがあるか確認
+    const data = Storage.getData();
+    let template;
+    if (channelName === GLOBAL_CHANNEL_KEY) {
+      template = data.global && data.global[index];
+    } else {
+      const channel = data.channels.find(ch => ch.name === channelName);
+      template = channel && channel.data[index];
+    }
+    const hasAlias = template && template.alias;
+
     const menu = document.createElement("div");
     menu.id = "chat-helper-context-menu";
     menu.style.cssText = `
@@ -692,7 +748,8 @@ const UI = {
     `;
 
     const toggleText = isGlobal ? "ローカルに移動" : "グローバルに移動";
-    const menuLabels = ["削除", toggleText];
+    const aliasText = hasAlias ? "もとに戻す" : "別名表示";
+    const menuLabels = ["削除", toggleText, aliasText];
 
     // DOM APIを使用してメニュー項目を作成（Trusted Types対応）
     menuLabels.forEach(label => {
@@ -747,6 +804,25 @@ const UI = {
       Storage.moveTemplate(channelName, index, !isGlobal);
       this.setupChatButtons(iframe);
       menu.remove();
+    });
+
+    // エイリアス設定/削除
+    menuItems[2].addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.remove();
+
+      if (hasAlias) {
+        // エイリアスを削除
+        Storage.removeAlias(channelName, index);
+        this.setupChatButtons(iframe);
+      } else {
+        // エイリアスを設定
+        const alias = prompt("別名を入力してください:", template.caption || "");
+        if (alias !== null && alias.trim() !== "") {
+          Storage.setAlias(channelName, index, alias.trim());
+          this.setupChatButtons(iframe);
+        }
+      }
     });
 
     // メニュー外クリックで閉じる
@@ -889,14 +965,20 @@ const UI = {
 
   renderTemplateList(channelName, templates, isGlobal) {
     return `<ul class="template-list" data-channel="${channelName}">
-            ${templates.map((t, i) => `
-    <li class="template-item" draggable="true" data-index="${i}">
+            ${templates.map((t, i) => {
+              const caption = t.caption || Storage.generateCaption(t.content);
+              const displayText = t.alias
+                ? `<span class="alias-indicator">📝 ${this.escapeHtml(t.alias)}</span><span class="original-caption">(${this.escapeHtml(caption)})</span>`
+                : this.escapeHtml(caption);
+              return `
+    <li class="template-item${t.alias ? ' has-alias' : ''}" draggable="true" data-index="${i}">
     <span class="drag-handle">☰</span>
-    <span class="template-caption">${this.escapeHtml(t.caption || Storage.generateCaption(t.content))}</span>
+    <span class="template-caption">${displayText}</span>
     <span class="template-time">${new Date(t.timestamp).toLocaleString()}</span>
     <button class="delete-template-btn" data-channel="${channelName}" data-index="${i}">削除</button>
     </li>
-    `).join("")}
+    `;
+            }).join("")}
         </ul>`;
   },
 
@@ -1025,6 +1107,18 @@ const UI = {
 
             #chat-helper-buttons button.template-btn.global {
                 background-color: #9c27b0;
+            }
+
+            #chat-helper-buttons button.template-btn.aliased {
+                border: 2px solid #ff9800;
+                font-style: italic;
+                position: relative;
+            }
+
+            #chat-helper-buttons button.template-btn.aliased::before {
+                content: "📝";
+                margin-right: 3px;
+                font-size: 10px;
             }
 
             #chat-helper-buttons button.save-btn {
@@ -1218,6 +1312,24 @@ const UI = {
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
+            }
+
+            #chat-helper-management-modal .template-item.has-alias {
+                background-color: #fff9f0;
+                border-color: #ff9800;
+            }
+
+            #chat-helper-management-modal .alias-indicator {
+                font-weight: bold;
+                color: #ff9800;
+                margin-right: 6px;
+            }
+
+            #chat-helper-management-modal .original-caption {
+                color: #888;
+                font-size: 12px;
+                font-style: italic;
+                margin-left: 4px;
             }
 
             #chat-helper-management-modal .template-time {
