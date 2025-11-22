@@ -25,7 +25,39 @@ const Utils = {
   },
 
   getChannelInfo() {
-    // YouTube用
+    // iframe内のYouTubeチャットで実行されている場合
+    const isInIframe = window.self !== window.top;
+    const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
+
+    if (isInIframe && isYouTubeChatIframe) {
+      // YouTubeチャット内のチャンネル情報を取得
+      // 方法1: チャンネル名の要素から取得
+      let channelElement = this.safeQuerySelector(
+        document,
+        "yt-live-chat-header-renderer #channel-name a, " +
+        "yt-live-chat-header-renderer yt-formatted-string a, " +
+        "#author-name a"
+      );
+
+      if (channelElement) {
+        return {
+          name: channelElement.innerText.trim(),
+          href: channelElement.href
+        };
+      }
+
+      // 方法2: URLから動画IDを取得してチャンネル識別
+      const urlParams = new URLSearchParams(window.location.search);
+      const videoId = urlParams.get('v');
+      if (videoId) {
+        return {
+          name: `Video_${videoId}`,
+          href: `https://www.youtube.com/watch?v=${videoId}`
+        };
+      }
+    }
+
+    // 通常のYouTubeページ
     let channelElement = this.safeQuerySelector(
       document,
       "ytd-channel-name#channel-name yt-formatted-string#text a"
@@ -38,7 +70,7 @@ const Utils = {
       };
     }
 
-    // Holodex用
+    // Holodex親ページ用
     channelElement = this.safeQuerySelector(
       document,
       ".channel-name a, .video-channel a, [class*='channel'] a"
@@ -1464,16 +1496,41 @@ const ChatHelper = {
     // Holodex用：複数のチャットiframeを検出して処理
     const chatFrames = [];
 
-    // すべてのiframeをチェック
-    const iframes = document.querySelectorAll("iframe");
-    for (const iframe of iframes) {
-      try {
-        if (iframe.src && iframe.src.includes("youtube.com/live_chat")) {
-          chatFrames.push(iframe);
+    // Holodex専用のセレクタで検索
+    const holodexSelectors = [
+      "div.embedded-chat iframe",
+      "div.watch-live-chat iframe",
+      "div.cell-content iframe"
+    ];
+
+    for (const selector of holodexSelectors) {
+      const iframes = document.querySelectorAll(selector);
+      iframes.forEach(iframe => {
+        try {
+          if (iframe.src && iframe.src.includes("youtube.com/live_chat")) {
+            // 重複を避ける
+            if (!chatFrames.includes(iframe)) {
+              chatFrames.push(iframe);
+            }
+          }
+        } catch (e) {
+          // エラーを無視（クロスオリジンの場合）
+          console.warn("iframe.src にアクセスできません（クロスオリジン）:", e);
         }
-      } catch (e) {
-        // エラーを無視（クロスオリジンの場合）
-        console.warn("iframe.src にアクセスできません（クロスオリジン）:", e);
+      });
+    }
+
+    // フォールバック：すべてのiframeをチェック
+    if (chatFrames.length === 0) {
+      const allIframes = document.querySelectorAll("iframe");
+      for (const iframe of allIframes) {
+        try {
+          if (iframe.src && iframe.src.includes("youtube.com/live_chat")) {
+            chatFrames.push(iframe);
+          }
+        } catch (e) {
+          console.warn("iframe.src にアクセスできません（クロスオリジン）:", e);
+        }
       }
     }
 
