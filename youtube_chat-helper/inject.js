@@ -784,6 +784,136 @@ const UI = {
     });
   },
 
+  // 別名入力ダイアログを表示
+  showAliasInputDialog(event, template, channelName, index, iframe) {
+    // 既存のダイアログを削除
+    const existingDialog = iframe.contentDocument.querySelector("#chat-helper-alias-dialog");
+    if (existingDialog) existingDialog.remove();
+
+    const dialog = iframe.contentDocument.createElement("div");
+    dialog.id = "chat-helper-alias-dialog";
+    dialog.style.cssText = `
+      position: fixed;
+      background: white;
+      border: 2px solid #ff9800;
+      box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      z-index: 10001;
+      padding: 12px;
+      min-width: 250px;
+    `;
+
+    // タイトル
+    const title = iframe.contentDocument.createElement("div");
+    title.textContent = "別名を入力してください";
+    title.style.cssText = "font-weight: bold; margin-bottom: 8px; font-size: 14px;";
+    dialog.appendChild(title);
+
+    // 入力フィールド（contenteditable）
+    const inputField = iframe.contentDocument.createElement("div");
+    inputField.contentEditable = true;
+    inputField.style.cssText = `
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      padding: 6px;
+      min-height: 30px;
+      margin-bottom: 8px;
+      background: white;
+      overflow-x: auto;
+      white-space: nowrap;
+    `;
+
+    // 元のコンテンツを表示（スタンプ含む）
+    template.content.forEach(item => {
+      if (typeof item === "string") {
+        inputField.appendChild(iframe.contentDocument.createTextNode(item));
+      } else if (typeof item === "object" && item.src) {
+        const img = iframe.contentDocument.createElement("img");
+        img.src = item.src;
+        img.alt = item.alt || "";
+        img.style.cssText = "height: 18px; width: 18px; vertical-align: middle;";
+        inputField.appendChild(img);
+      }
+    });
+
+    dialog.appendChild(inputField);
+
+    // ボタンエリア
+    const buttonArea = iframe.contentDocument.createElement("div");
+    buttonArea.style.cssText = "display: flex; gap: 8px; justify-content: flex-end;";
+
+    // OKボタン
+    const okBtn = iframe.contentDocument.createElement("button");
+    okBtn.textContent = "OK";
+    okBtn.style.cssText = "background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer;";
+    okBtn.addEventListener("click", () => {
+      // 入力内容を取得（テキストのみ）
+      const aliasText = inputField.innerText.trim();
+      if (aliasText !== "") {
+        Storage.setAlias(channelName, index, aliasText);
+        this.setupChatButtons(iframe);
+      }
+      dialog.remove();
+    });
+
+    // キャンセルボタン
+    const cancelBtn = iframe.contentDocument.createElement("button");
+    cancelBtn.textContent = "キャンセル";
+    cancelBtn.style.cssText = "background: #ccc; color: black; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer;";
+    cancelBtn.addEventListener("click", () => {
+      dialog.remove();
+    });
+
+    buttonArea.appendChild(cancelBtn);
+    buttonArea.appendChild(okBtn);
+    dialog.appendChild(buttonArea);
+
+    // ダイアログを表示
+    iframe.contentDocument.body.appendChild(dialog);
+
+    // コンテキストメニューの近くに配置
+    dialog.style.left = `${event.clientX}px`;
+    dialog.style.top = `${event.clientY}px`;
+
+    // 画面外に出ないように調整
+    const dialogRect = dialog.getBoundingClientRect();
+    const iframeWidth = iframe.contentWindow.innerWidth;
+    const iframeHeight = iframe.contentWindow.innerHeight;
+
+    if (dialogRect.right > iframeWidth) {
+      dialog.style.left = `${iframeWidth - dialogRect.width - 10}px`;
+    }
+    if (dialogRect.bottom > iframeHeight) {
+      dialog.style.top = `${iframeHeight - dialogRect.height - 10}px`;
+    }
+
+    // フォーカスを設定
+    inputField.focus();
+
+    // Enterキーで確定
+    inputField.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        okBtn.click();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancelBtn.click();
+      }
+    });
+
+    // ダイアログ外クリックで閉じる
+    const closeDialog = (e) => {
+      if (!dialog.contains(e.target)) {
+        dialog.remove();
+      }
+    };
+
+    setTimeout(() => {
+      iframe.contentDocument.addEventListener("click", closeDialog, { once: true });
+      document.addEventListener("click", closeDialog, { once: true });
+    }, 100);
+  },
+
   showContextMenu(event, channelName, index, iframe, isGlobal) {
     // 既存のメニューを削除（iframe内と親ドキュメント両方）
     const existingMenu = iframe.contentDocument.querySelector("#chat-helper-context-menu");
@@ -827,13 +957,29 @@ const UI = {
       menu.appendChild(item);
     });
 
-    // エイリアスがある場合、元のテキストを表示
+    // エイリアスがある場合、元のテキストを表示（スタンプ絵文字含む）
     if (hasAlias) {
-      const originalText = template.caption || Storage.generateCaption(template.content);
       const originalItem = document.createElement("div");
       originalItem.className = "menu-item-info";
-      originalItem.textContent = `元: ${originalText}`;
       originalItem.style.cssText = "padding: 8px 12px; font-size: 12px; color: #666; background-color: #f9f9f9; border-top: 1px solid #eee;";
+
+      // "元: "ラベル
+      const label = document.createTextNode("元: ");
+      originalItem.appendChild(label);
+
+      // 元のコンテンツを表示（スタンプ絵文字含む）
+      template.content.forEach(item => {
+        if (typeof item === "string") {
+          originalItem.appendChild(document.createTextNode(item));
+        } else if (typeof item === "object" && item.src) {
+          const img = document.createElement("img");
+          img.src = item.src;
+          img.alt = item.alt || "";
+          img.style.cssText = "height: 16px; width: 16px; vertical-align: middle;";
+          originalItem.appendChild(img);
+        }
+      });
+
       menu.appendChild(originalItem);
     }
 
@@ -893,12 +1039,8 @@ const UI = {
         Storage.removeAlias(channelName, index);
         this.setupChatButtons(iframe);
       } else {
-        // エイリアスを設定
-        const alias = prompt("別名を入力してください:", template.caption || "");
-        if (alias !== null && alias.trim() !== "") {
-          Storage.setAlias(channelName, index, alias.trim());
-          this.setupChatButtons(iframe);
-        }
+        // エイリアスを設定（カスタムダイアログを表示）
+        this.showAliasInputDialog(event, template, channelName, index, iframe);
       }
     });
 
