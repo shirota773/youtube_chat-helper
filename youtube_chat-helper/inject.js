@@ -973,7 +973,7 @@ const UI = {
       originalItem.style.cssText = "padding: 8px 12px; font-size: 12px; color: #666; background-color: #f9f9f9; border-top: 1px solid #eee;";
 
       // "元: "ラベル
-      const label = document.createTextNode("元: ");
+      const label = document.createTextNode("");
       originalItem.appendChild(label);
 
       // 元のコンテンツを表示（スタンプ絵文字含む）
