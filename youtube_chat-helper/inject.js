@@ -1493,7 +1493,9 @@ const ChatHelper = {
   },
 
   checkForChatFrameHolodex() {
-    // Holodex用：複数のチャットiframeを検出して処理
+    // Holodex用：複数のチャットiframeを検出
+    // 注意: Holodex親ページからはクロスオリジン制約によりiframe内にアクセスできません
+    // iframe内での自己初期化（initializeCurrentFrame）に依存します
     const chatFrames = [];
 
     // Holodex専用のセレクタで検索
@@ -1540,61 +1542,11 @@ const ChatHelper = {
     }
 
     console.log(`Holodex: ${chatFrames.length} 個のチャットフレームを検出`);
+    console.log("Holodex: iframe内で自己初期化が実行されます（クロスオリジン制約のため親ページからは初期化不可）");
 
-    // 各チャットフレームを初期化
-    chatFrames.forEach((chatFrame, index) => {
-      console.log(`Holodex: チャットフレーム #${index} の処理開始`);
-      const frameId = `holodex-chat-${index}`;
-
-      // 初期化済みかチェック - iframe内にボタンが存在するかで確認
-      const isInitialized = chatFrame.dataset.chatHelperInitialized === "true";
-      let hasButtons = false;
-
-      try {
-        if (chatFrame.contentDocument) {
-          hasButtons = chatFrame.contentDocument.querySelector("#chat-helper-buttons") !== null;
-        }
-      } catch (e) {
-        // クロスオリジンの場合は確認できない
-      }
-
-      if (isInitialized && hasButtons) {
-        console.log(`Holodex: チャットフレーム #${index} は既に初期化済みでボタンも存在`);
-        return;
-      }
-
-      if (isInitialized && !hasButtons) {
-        console.log(`Holodex: チャットフレーム #${index} はフラグが立っているがボタンが無い - 再初期化`);
-        chatFrame.dataset.chatHelperInitialized = "false";
-      }
-
-      // loadイベントリスナーを追加（重複しないようにチェック）
-      if (!chatFrame.dataset.chatHelperListenerAdded) {
-        chatFrame.addEventListener("load", () => {
-          console.log(`Holodex: チャットフレーム #${index} をロード（loadイベント）`);
-          chatFrame.dataset.chatHelperInitialized = "false"; // リロード時にフラグをクリア
-          this.initializeFrameSafe(chatFrame, frameId);
-        });
-        chatFrame.dataset.chatHelperListenerAdded = "true";
-        console.log(`Holodex: チャットフレーム #${index} にloadイベントリスナーを追加`);
-      }
-
-      // すでにロード済みの場合は即座に初期化
-      try {
-        const readyState = chatFrame.contentDocument?.readyState;
-        console.log(`Holodex: チャットフレーム #${index} のreadyState: ${readyState}`);
-
-        if (readyState === "complete") {
-          console.log(`Holodex: チャットフレーム #${index} は既にロード済み`);
-          this.initializeFrameSafe(chatFrame, frameId);
-        } else if (readyState) {
-          console.log(`Holodex: チャットフレーム #${index} はまだロード中、loadイベントを待機`);
-        }
-      } catch (e) {
-        // クロスオリジンの場合、loadイベントを待つ
-        console.warn(`Holodex: チャットフレーム #${index} はクロスオリジン、loadイベントを待機中...`, e);
-      }
-    });
+    // クロスオリジンの場合、親ページからiframe内を初期化することはできません
+    // 代わりに、all_frames:trueにより、iframe内でスクリプトが実行され、
+    // initializeCurrentFrame()によって自己初期化されます
   },
 
   initializeFrameSafe(iframe, frameId) {
