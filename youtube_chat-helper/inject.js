@@ -77,6 +77,14 @@ const Utils = {
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
     };
+  },
+
+  isHolodex() {
+    return window.location.hostname.includes("holodex.net");
+  },
+
+  isYouTube() {
+    return window.location.hostname.includes("youtube.com");
   }
 };
 
@@ -304,11 +312,22 @@ const CCPPP = {
     this.enabled = Settings.get().ccpppEnabled;
     if (!this.enabled) return;
 
+    // iframe.contentDocument が null の場合は初期化をスキップ
+    if (!iframe.contentDocument) {
+      console.warn("CCPPP: iframe.contentDocument is null, skipping init");
+      return;
+    }
+
     this.buildEmojiMap(iframe);
     this.observeInput(iframe);
   },
 
   buildEmojiMap(iframe) {
+    if (!iframe.contentDocument) {
+      console.warn("CCPPP: iframe.contentDocument is null, skipping buildEmojiMap");
+      return;
+    }
+
     const emojis = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
       "tp-yt-iron-pages #categories img[alt]"
@@ -324,6 +343,11 @@ const CCPPP = {
   },
 
   observeInput(iframe) {
+    if (!iframe.contentDocument) {
+      console.warn("CCPPP: iframe.contentDocument is null, skipping observeInput");
+      return;
+    }
+
     const inputField = Utils.safeQuerySelector(
       iframe.contentDocument,
       "yt-live-chat-text-input-field-renderer#input #input"
@@ -349,6 +373,11 @@ const CCPPP = {
 
   processInput(iframe) {
     if (!this.enabled) return;
+
+    if (!iframe.contentDocument) {
+      console.warn("CCPPP: iframe.contentDocument is null, skipping processInput");
+      return;
+    }
 
     const inputField = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -525,6 +554,12 @@ const UI = {
 
   setupChatButtons(iframe) {
     this.currentIframe = iframe;
+
+    // iframe.contentDocument が null の場合は早期リターン
+    if (!iframe.contentDocument) {
+      console.warn("iframe.contentDocument is null, skipping setupChatButtons");
+      return;
+    }
 
     /* emoji load */
     const emojiButton = Utils.safeQuerySelector(
@@ -974,6 +1009,12 @@ const UI = {
   },
 
   addStyles(iframe) {
+    // iframe.contentDocument が null の場合は早期リターン（クロスオリジンまたは未ロードの場合）
+    if (!iframe.contentDocument) {
+      console.warn("iframe.contentDocument is null, skipping addStyles");
+      return;
+    }
+
     const styleId = "chat-helper-styles";
     if (iframe.contentDocument.querySelector(`#${styleId}`)) return;
 
@@ -1325,28 +1366,21 @@ const ChatHelper = {
   },
 
   checkForChatFrame() {
+    const isHolodex = Utils.isHolodex();
+    const isYouTube = Utils.isYouTube();
+
+    if (isHolodex) {
+      // Holodexの場合、複数のチャットiframeを処理
+      this.checkForChatFrameHolodex();
+    } else if (isYouTube) {
+      // YouTubeの場合、単一のチャットiframeを処理
+      this.checkForChatFrameYouTube();
+    }
+  },
+
+  checkForChatFrameYouTube() {
     // YouTube用
-    let chatFrame = document.querySelector("iframe#chatframe");
-
-    // Holodex用（複数のセレクタを試す）
-    if (!chatFrame) {
-      chatFrame = document.querySelector("iframe[src*='youtube.com/live_chat']");
-    }
-    if (!chatFrame) {
-      // Holodexではiframeが動的に追加される可能性がある
-      const iframes = document.querySelectorAll("iframe");
-      for (const iframe of iframes) {
-        try {
-          if (iframe.src && iframe.src.includes("youtube.com/live_chat")) {
-            chatFrame = iframe;
-            break;
-          }
-        } catch (e) {
-          // エラーを無視
-        }
-      }
-    }
-
+    const chatFrame = document.querySelector("iframe#chatframe");
     if (!chatFrame) return;
 
     if (!this.initialized) {
@@ -1365,8 +1399,76 @@ const ChatHelper = {
     }
   },
 
+  checkForChatFrameHolodex() {
+    // Holodex用：複数のチャットiframeを検出して処理
+    const chatFrames = [];
+
+    // すべてのiframeをチェック
+    const iframes = document.querySelectorAll("iframe");
+    for (const iframe of iframes) {
+      try {
+        if (iframe.src && iframe.src.includes("youtube.com/live_chat")) {
+          chatFrames.push(iframe);
+        }
+      } catch (e) {
+        // エラーを無視（クロスオリジンの場合）
+        console.warn("iframe.src にアクセスできません（クロスオリジン）:", e);
+      }
+    }
+
+    if (chatFrames.length === 0) {
+      console.log("Holodex: チャットフレームが見つかりません");
+      return;
+    }
+
+    console.log(`Holodex: ${chatFrames.length} 個のチャットフレームを検出`);
+
+    // 各チャットフレームを初期化
+    chatFrames.forEach((chatFrame, index) => {
+      const frameId = `holodex-chat-${index}`;
+
+      // すでに初期化済みかチェック
+      if (chatFrame.dataset.chatHelperInitialized === "true") {
+        return;
+      }
+
+      // loadイベントリスナーを追加
+      chatFrame.addEventListener("load", () => {
+        console.log(`Holodex: チャットフレーム #${index} をロード`);
+        this.initializeFrameSafe(chatFrame, frameId);
+      });
+
+      // すでにロード済みの場合は即座に初期化
+      try {
+        if (chatFrame.contentDocument?.readyState === "complete") {
+          console.log(`Holodex: チャットフレーム #${index} は既にロード済み`);
+          this.initializeFrameSafe(chatFrame, frameId);
+        }
+      } catch (e) {
+        // クロスオリジンの場合、loadイベントを待つ
+        console.warn(`Holodex: チャットフレーム #${index} はクロスオリジン、loadイベントを待機中...`);
+      }
+    });
+  },
+
+  initializeFrameSafe(iframe, frameId) {
+    // 初期化済みマークを付ける
+    iframe.dataset.chatHelperInitialized = "true";
+
+    // フレームを初期化
+    this.initializeFrame(iframe);
+  },
+
   initializeFrame(iframe) {
     console.log("チャットフレームを初期化中...");
+
+    // iframe.contentDocument が null の場合は初期化をスキップ
+    if (!iframe.contentDocument) {
+      console.warn("iframe.contentDocument is null, cannot initialize frame");
+      this.initialized = false;
+      return;
+    }
+
     this.initialized = true;
 
     UI.addStyles(iframe);
