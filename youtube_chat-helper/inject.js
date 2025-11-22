@@ -10,7 +10,7 @@ const Utils = {
         try {
             return element?.querySelector(selector) || null;
         } catch (e) {
-            console.warn(`セレクタエラー: ${selector}`, e);
+            console.warn(`Selector Error: ${selector}`, e);
             return null;
         }
     },
@@ -19,7 +19,7 @@ const Utils = {
         try {
             return element?.querySelectorAll(selector) || [];
         } catch (e) {
-            console.warn(`セレクタエラー: ${selector}`, e);
+            console.warn(`Selector Error: ${selector}`, e);
             return [];
         }
     },
@@ -529,9 +529,13 @@ const UI = {
             iframe.contentDocument,
             "#chat-messages #input-panel #container"
         );
-        if (!chatContainer) return;
+        const chatContainerTop = Utils.safeQuerySelector(
+            iframe.contentDocument,
+            "#chat-messages #input-panel #container > #top"
+        );
+      if (!chatContainer) return;
 
-        const existingWrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
+      const existingWrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
         if (existingWrapper) existingWrapper.remove();
 
         const buttonWrapper = document.createElement("div");
@@ -562,13 +566,14 @@ const UI = {
         }, "save-btn");
         buttonWrapper.appendChild(saveButton);
 
-        chatContainer.appendChild(buttonWrapper);
+        // chatContainer.appendChild(buttonWrapper);
+        chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
 
-        // ドラッグ＆ドロップを設定
-        this.setupButtonDragAndDrop(iframe);
+      // ドラッグ＆ドロップを設定
+      this.setupButtonDragAndDrop(iframe);
     },
 
-    createTemplateButton(entry, index, channelName, iframe, isGlobal) {
+  createTemplateButton(entry, index, channelName, iframe, isGlobal) {
         const btn = this.createButton(
             `template-btn-${isGlobal ? "g" : "c"}-${index}`,
             entry.content,
@@ -962,9 +967,9 @@ const UI = {
         styleTag.id = styleId;
         styleTag.textContent = `
             #chat-helper-buttons {
-                position: absolute;
+                position: relative;
                 top: 0;
-                margin-top: 36px;
+                /*margin-top: 36px;*/
                 z-index: 1;
                 background: rgba(144, 238, 144, 0.3);
                 height: auto;
@@ -1250,8 +1255,8 @@ const StampLoader = {
 
         setTimeout(() => {
             emojiButton.click();
+            emojiButton.click();
             setTimeout(() => {
-                emojiButton.click();
                 this.loaded = true;
                 console.log("スタンプを自動読み込みしました。");
 
@@ -1259,7 +1264,7 @@ const StampLoader = {
                 setTimeout(() => {
                     CCPPP.init(iframe);
                 }, 500);
-            }, 500);
+            }, 100);
         }, 1000);
     }
 };
