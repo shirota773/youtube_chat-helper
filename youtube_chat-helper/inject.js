@@ -780,10 +780,19 @@ const UI = {
     okBtn.textContent = "OK";
     okBtn.style.cssText = "background: #4caf50; color: white; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer;";
     okBtn.addEventListener("click", () => {
-      // 入力内容を取得（テキストのみ）
-      const aliasText = inputField.innerText.trim();
-      if (aliasText !== "") {
-        Storage.setAlias(channelName, index, aliasText);
+      // 入力内容を取得（テキストとスタンプ絵文字を含む配列）
+      const aliasContent = [];
+      inputField.childNodes.forEach(node => {
+        if (node.nodeType === 3) { // テキストノード
+          const text = node.textContent;
+          if (text) aliasContent.push(text);
+        } else if (node.nodeType === 1 && node.tagName === "IMG") { // imgタグ
+          aliasContent.push({ alt: node.alt, src: node.src });
+        }
+      });
+
+      if (aliasContent.length > 0) {
+        Storage.setAlias(channelName, index, aliasContent);
         this.setupChatButtons(iframe);
       }
       dialog.remove();
@@ -1119,8 +1128,12 @@ const UI = {
     return `<ul class="template-list" data-channel="${channelName}">
             ${templates.map((t, i) => {
               const caption = t.caption || Storage.generateCaption(t.content);
-              const displayText = t.alias
-                ? `<span class="alias-indicator">📝 ${this.escapeHtml(t.alias)}</span><span class="original-caption">(${this.escapeHtml(caption)})</span>`
+              // aliasが配列の場合はgenerateCaptionで文字列に変換、文字列の場合はそのまま使用
+              const aliasText = t.alias
+                ? (Array.isArray(t.alias) ? Storage.generateCaption(t.alias) : t.alias)
+                : null;
+              const displayText = aliasText
+                ? `<span class="alias-indicator">📝 ${this.escapeHtml(aliasText)}</span><span class="original-caption">(${this.escapeHtml(caption)})</span>`
                 : this.escapeHtml(caption);
               return `
     <li class="template-item${t.alias ? ' has-alias' : ''}" draggable="true" data-index="${i}">
