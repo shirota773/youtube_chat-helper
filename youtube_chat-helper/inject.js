@@ -1425,57 +1425,74 @@ const ChatHelper = {
 
     // 各チャットフレームを初期化
     chatFrames.forEach((chatFrame, index) => {
+      console.log(`Holodex: チャットフレーム #${index} の処理開始`);
       const frameId = `holodex-chat-${index}`;
 
       // すでに初期化済みかチェック
       if (chatFrame.dataset.chatHelperInitialized === "true") {
+        console.log(`Holodex: チャットフレーム #${index} は既に初期化済み`);
         return;
       }
 
       // loadイベントリスナーを追加
       chatFrame.addEventListener("load", () => {
-        console.log(`Holodex: チャットフレーム #${index} をロード`);
+        console.log(`Holodex: チャットフレーム #${index} をロード（loadイベント）`);
         this.initializeFrameSafe(chatFrame, frameId);
       });
+      console.log(`Holodex: チャットフレーム #${index} にloadイベントリスナーを追加`);
 
       // すでにロード済みの場合は即座に初期化
       try {
-        if (chatFrame.contentDocument?.readyState === "complete") {
+        const readyState = chatFrame.contentDocument?.readyState;
+        console.log(`Holodex: チャットフレーム #${index} のreadyState: ${readyState}`);
+
+        if (readyState === "complete") {
           console.log(`Holodex: チャットフレーム #${index} は既にロード済み`);
           this.initializeFrameSafe(chatFrame, frameId);
+        } else {
+          console.log(`Holodex: チャットフレーム #${index} はまだロード中、loadイベントを待機`);
         }
       } catch (e) {
         // クロスオリジンの場合、loadイベントを待つ
-        console.warn(`Holodex: チャットフレーム #${index} はクロスオリジン、loadイベントを待機中...`);
+        console.warn(`Holodex: チャットフレーム #${index} はクロスオリジン、loadイベントを待機中...`, e);
       }
     });
   },
 
   initializeFrameSafe(iframe, frameId) {
+    console.log(`initializeFrameSafe: ${frameId} の初期化開始`);
+
     // 初期化済みマークを付ける
     iframe.dataset.chatHelperInitialized = "true";
+    console.log(`initializeFrameSafe: ${frameId} に初期化済みマークを設定`);
 
     // フレームを初期化
     this.initializeFrame(iframe);
   },
 
   initializeFrame(iframe) {
-    console.log("チャットフレームを初期化中...");
+    console.log("initializeFrame: チャットフレームを初期化中...");
 
     // iframe.contentDocument が null の場合は初期化をスキップ
     if (!iframe.contentDocument) {
-      console.warn("iframe.contentDocument is null, cannot initialize frame");
+      console.warn("initializeFrame: iframe.contentDocument is null, cannot initialize frame");
       this.initialized = false;
       return;
     }
 
+    console.log("initializeFrame: iframe.contentDocument が有効です");
     this.initialized = true;
 
+    console.log("initializeFrame: UI.addStyles を呼び出し");
     UI.addStyles(iframe);
+
+    console.log("initializeFrame: UI.setupChatButtons を呼び出し");
     UI.setupChatButtons(iframe);
+
+    console.log("initializeFrame: StampLoader.autoLoadStamps を呼び出し");
     StampLoader.autoLoadStamps(iframe);
 
-    console.log("YouTube Chat Helper の初期化完了！");
+    console.log("initializeFrame: YouTube Chat Helper の初期化完了！");
   }
 };
 
