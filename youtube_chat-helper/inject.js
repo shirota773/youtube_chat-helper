@@ -1318,7 +1318,21 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("YouTube Chat Helper v2.4 を初期化中...");
+    console.log("YouTube Chat Helper v2.7 を初期化中...");
+
+    // iframe内で実行されているかチェック
+    const isInIframe = window.self !== window.top;
+    const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
+
+    if (isInIframe && isYouTubeChatIframe) {
+      // iframe内のYouTubeチャット - 直接初期化
+      console.log("YouTube Chat Helper: iframe内のチャットを検出、直接初期化");
+      this.initializeCurrentFrame();
+      return;
+    }
+
+    // 通常のページ（YouTube/Holodex）
+    console.log("YouTube Chat Helper: 通常のページとして初期化");
     UI.addMainPageStyles();
     this.observeDOM();
     this.checkForChatFrame();
@@ -1333,6 +1347,37 @@ const ChatHelper = {
         CCPPP.init(UI.currentIframe);
       }
     });
+  },
+
+  initializeCurrentFrame() {
+    // 現在のウィンドウがiframe内のチャットの場合、自分自身を初期化
+    console.log("initializeCurrentFrame: 現在のフレームを初期化");
+
+    // iframe要素の代わりに、windowオブジェクトを使用
+    const pseudoIframe = {
+      contentDocument: document,
+      contentWindow: window
+    };
+
+    try {
+      UI.addStyles(pseudoIframe);
+      UI.setupChatButtons(pseudoIframe);
+      StampLoader.autoLoadStamps(pseudoIframe);
+
+      // 設定変更を監視
+      Settings.listenForChanges((newSettings) => {
+        console.log("iframe内: 設定が変更されました:", newSettings);
+        CCPPP.enabled = newSettings.ccpppEnabled;
+
+        if (newSettings.ccpppEnabled) {
+          CCPPP.init(pseudoIframe);
+        }
+      });
+
+      console.log("initializeCurrentFrame: 初期化完了");
+    } catch (e) {
+      console.error("initializeCurrentFrame: エラー", e);
+    }
   },
 
   observeDOM() {
