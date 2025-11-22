@@ -760,6 +760,16 @@ const UI = {
       menu.appendChild(item);
     });
 
+    // エイリアスがある場合、元のテキストを表示
+    if (hasAlias) {
+      const originalText = template.caption || Storage.generateCaption(template.content);
+      const originalItem = document.createElement("div");
+      originalItem.className = "menu-item-info";
+      originalItem.textContent = `元: ${originalText}`;
+      originalItem.style.cssText = "padding: 8px 12px; font-size: 12px; color: #666; background-color: #f9f9f9; border-top: 1px solid #eee;";
+      menu.appendChild(originalItem);
+    }
+
     // メニューをiframe内に表示（座標計算がシンプルになる）
     menu.style.left = `${event.clientX}px`;
     menu.style.top = `${event.clientY}px`;
@@ -1111,14 +1121,6 @@ const UI = {
 
             #chat-helper-buttons button.template-btn.aliased {
                 border: 2px solid #ff9800;
-                font-style: italic;
-                position: relative;
-            }
-
-            #chat-helper-buttons button.template-btn.aliased::before {
-                content: "📝";
-                margin-right: 3px;
-                font-size: 10px;
             }
 
             #chat-helper-buttons button.save-btn {
