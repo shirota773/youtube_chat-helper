@@ -48,3 +48,39 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         notifySettingsChange(newSettings);
     }
 });
+
+// ストレージ用のメッセージリスナー（inject.jsからのメッセージを処理）
+window.addEventListener("message", (event) => {
+    // 同じウィンドウからのメッセージのみ処理
+    if (event.source !== window) return;
+
+    const message = event.data;
+
+    // ChatHelperのストレージメッセージのみ処理
+    if (!message || message.source !== "chat-helper-page") return;
+
+    if (message.type === "storage-get") {
+        // データ取得
+        chrome.storage.local.get(message.key, (result) => {
+            window.postMessage({
+                source: "chat-helper-content",
+                type: "storage-get-response",
+                requestId: message.requestId,
+                data: result[message.key]
+            }, "*");
+        });
+    } else if (message.type === "storage-set") {
+        // データ保存
+        const dataToSave = {};
+        dataToSave[message.key] = message.value;
+        chrome.storage.local.set(dataToSave, () => {
+            window.postMessage({
+                source: "chat-helper-content",
+                type: "storage-set-response",
+                requestId: message.requestId,
+                success: !chrome.runtime.lastError,
+                error: chrome.runtime.lastError?.message
+            }, "*");
+        });
+    }
+});

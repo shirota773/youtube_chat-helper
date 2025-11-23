@@ -219,29 +219,96 @@ const Settings = {
   }
 };
 
+// chrome.storage用のメッセージパッシングヘルパー
+const ChromeStorageHelper = {
+  requestIdCounter: 0,
+  pendingRequests: new Map(),
+
+  sendMessage(type, key, value = null) {
+    return new Promise((resolve, reject) => {
+      const requestId = `req_${++this.requestIdCounter}_${Date.now()}`;
+
+      // レスポンスリスナーを登録
+      this.pendingRequests.set(requestId, { resolve, reject });
+
+      // メッセージを送信
+      window.postMessage({
+        source: "chat-helper-page",
+        type: type,
+        requestId: requestId,
+        key: key,
+        value: value
+      }, "*");
+
+      // タイムアウト設定（5秒）
+      setTimeout(() => {
+        if (this.pendingRequests.has(requestId)) {
+          this.pendingRequests.delete(requestId);
+          reject(new Error("Storage request timeout"));
+        }
+      }, 5000);
+    });
+  },
+
+  async get(key) {
+    return this.sendMessage("storage-get", key);
+  },
+
+  async set(key, value) {
+    return this.sendMessage("storage-set", key, value);
+  }
+};
+
+// レスポンスリスナーを設定
+window.addEventListener("message", (event) => {
+  if (event.source !== window) return;
+
+  const message = event.data;
+  if (!message || message.source !== "chat-helper-content") return;
+
+  if (message.type === "storage-get-response") {
+    const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
+    if (pending) {
+      ChromeStorageHelper.pendingRequests.delete(message.requestId);
+      pending.resolve(message.data);
+    }
+  } else if (message.type === "storage-set-response") {
+    const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
+    if (pending) {
+      ChromeStorageHelper.pendingRequests.delete(message.requestId);
+      if (message.success) {
+        pending.resolve(true);
+      } else {
+        pending.reject(new Error(message.error || "Storage set failed"));
+      }
+    }
+  }
+});
+
 // ストレージ管理
 const Storage = {
-  getData() {
+  async getData() {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { channels: [], global: [] };
+      const data = await ChromeStorageHelper.get(STORAGE_KEY);
+      return data || { channels: [], global: [] };
     } catch (e) {
-      console.error("ストレージデータの読み込みエラー:", e);
+      console.error("[ChatHelper] ストレージデータの読み込みエラー:", e);
       return { channels: [], global: [] };
     }
   },
 
-  saveData(data) {
+  async saveData(data) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      await ChromeStorageHelper.set(STORAGE_KEY, data);
       return true;
     } catch (e) {
-      console.error("ストレージデータの保存エラー:", e);
+      console.error("[ChatHelper] ストレージデータの保存エラー:", e);
       return false;
     }
   },
 
-  saveTemplate(newContent, isGlobal = false) {
-    const data = this.getData();
+  async saveTemplate(newContent, isGlobal = false) {
+    const data = await this.getData();
     const template = {
       timestamp: new Date().toISOString(),
       content: newContent,
@@ -258,7 +325,7 @@ const Storage = {
         console.warn("[ChatHelper] チャンネル情報が取得できないため、グローバルとして保存します。");
         if (!data.global) data.global = [];
         data.global.push(template);
-        return this.saveData(data);
+        return await this.saveData(data);
       }
 
       let channelIndex = data.channels.findIndex(ch => ch.name === channelInfo.name);
@@ -274,11 +341,11 @@ const Storage = {
       console.log("[ChatHelper] チャンネル別テンプレートとして保存しました:", channelInfo.name);
     }
 
-    return this.saveData(data);
+    return await this.saveData(data);
   },
 
-  deleteTemplate(channelName, index) {
-    const data = this.getData();
+  async deleteTemplate(channelName, index) {
+    const data = await this.getData();
 
     if (channelName === GLOBAL_CHANNEL_KEY) {
       if (data.global && data.global[index]) {
@@ -293,12 +360,12 @@ const Storage = {
       }
     }
 
-    return this.saveData(data);
+    return await this.saveData(data);
   },
 
   // テンプレートをグローバル⇔ローカルに移動
-  moveTemplate(fromChannel, index, toGlobal) {
-    const data = this.getData();
+  async moveTemplate(fromChannel, index, toGlobal) {
+    const data = await this.getData();
     let template;
 
     // 元の場所から取得して削除
@@ -334,11 +401,11 @@ const Storage = {
       }
     }
 
-    return this.saveData(data);
+    return await this.saveData(data);
   },
 
-  reorderTemplate(channelName, oldIndex, newIndex) {
-    const data = this.getData();
+  async reorderTemplate(channelName, oldIndex, newIndex) {
+    const data = await this.getData();
     let templates;
 
     if (channelName === GLOBAL_CHANNEL_KEY) {
@@ -356,12 +423,12 @@ const Storage = {
     const [removed] = templates.splice(oldIndex, 1);
     templates.splice(newIndex, 0, removed);
 
-    return this.saveData(data);
+    return await this.saveData(data);
   },
 
   // エイリアスを設定
-  setAlias(channelName, index, alias) {
-    const data = this.getData();
+  async setAlias(channelName, index, alias) {
+    const data = await this.getData();
     let template;
 
     if (channelName === GLOBAL_CHANNEL_KEY) {
@@ -374,12 +441,12 @@ const Storage = {
     }
 
     template.alias = alias;
-    return this.saveData(data);
+    return await this.saveData(data);
   },
 
   // エイリアスを削除
-  removeAlias(channelName, index) {
-    const data = this.getData();
+  async removeAlias(channelName, index) {
+    const data = await this.getData();
     let template;
 
     if (channelName === GLOBAL_CHANNEL_KEY) {
@@ -392,7 +459,7 @@ const Storage = {
     }
 
     delete template.alias;
-    return this.saveData(data);
+    return await this.saveData(data);
   },
 
   generateCaption(content) {
@@ -403,8 +470,8 @@ const Storage = {
     }).join("").slice(0, 50);
   },
 
-  getTemplatesForChannel(channelName) {
-    const data = this.getData();
+  async getTemplatesForChannel(channelName) {
+    const data = await this.getData();
     const result = { channel: [], global: [] };
 
     if (data.global) {
@@ -672,7 +739,7 @@ const UI = {
     return button;
   },
 
-  setupChatButtons(iframe) {
+  async setupChatButtons(iframe) {
     this.currentIframe = iframe;
 
     // iframe.contentDocument が null の場合は早期リターン
@@ -718,7 +785,7 @@ const UI = {
     const channelInfo = Utils.getChannelInfo();
     console.log("[ChatHelper] 取得したチャンネル情報:", channelInfo);
 
-    const templates = Storage.getTemplatesForChannel(channelInfo?.name);
+    const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
     console.log("[ChatHelper] テンプレート数 - グローバル:", templates.global.length, "チャンネル:", templates.channel.length);
 
     // グローバルテンプレートボタン
@@ -743,12 +810,14 @@ const UI = {
       if (data && data.length > 0) {
         const currentChannelInfo = Utils.getChannelInfo();
         if (currentChannelInfo && currentChannelInfo.name) {
-          Storage.saveTemplate(data, false);
-          this.setupChatButtons(iframe);
+          Storage.saveTemplate(data, false).then(() => {
+            this.setupChatButtons(iframe);
+          });
         } else {
           console.warn("[ChatHelper] チャンネル情報がないため、グローバルとして保存します。");
-          Storage.saveTemplate(data, true);
-          this.setupChatButtons(iframe);
+          Storage.saveTemplate(data, true).then(() => {
+            this.setupChatButtons(iframe);
+          });
         }
       }
     }, "save-btn");
@@ -850,8 +919,9 @@ const UI = {
         const newIndex = sameTypeButtons.indexOf(draggedBtn);
 
         if (oldIndex !== newIndex && newIndex >= 0) {
-          Storage.reorderTemplate(channelName, oldIndex, newIndex);
-          this.setupChatButtons(iframe);
+          Storage.reorderTemplate(channelName, oldIndex, newIndex).then(() => {
+            this.setupChatButtons(iframe);
+          });
         }
       });
     });
@@ -932,8 +1002,9 @@ const UI = {
       });
 
       if (aliasContent.length > 0) {
-        Storage.setAlias(channelName, index, aliasContent);
-        this.setupChatButtons(iframe);
+        Storage.setAlias(channelName, index, aliasContent).then(() => {
+          this.setupChatButtons(iframe);
+        });
       }
       dialog.remove();
     });
@@ -996,7 +1067,7 @@ const UI = {
     }, 100);
   },
 
-  showContextMenu(event, channelName, index, iframe, isGlobal) {
+  async showContextMenu(event, channelName, index, iframe, isGlobal) {
     // 既存のメニューを削除（iframe内と親ドキュメント両方）
     const existingMenu = iframe.contentDocument.querySelector("#chat-helper-context-menu");
     if (existingMenu) existingMenu.remove();
@@ -1004,7 +1075,7 @@ const UI = {
     if (existingMenuParent) existingMenuParent.remove();
 
     // 現在のテンプレートを取得してエイリアスがあるか確認
-    const data = Storage.getData();
+    const data = await Storage.getData();
     let template;
     if (channelName === GLOBAL_CHANNEL_KEY) {
       template = data.global && data.global[index];
@@ -1098,16 +1169,18 @@ const UI = {
     // 削除
     menuItems[0].addEventListener("click", (e) => {
       e.stopPropagation();
-      Storage.deleteTemplate(channelName, index);
-      this.setupChatButtons(iframe);
+      Storage.deleteTemplate(channelName, index).then(() => {
+        this.setupChatButtons(iframe);
+      });
       menu.remove();
     });
 
     // グローバル/ローカル切り替え
     menuItems[1].addEventListener("click", (e) => {
       e.stopPropagation();
-      Storage.moveTemplate(channelName, index, !isGlobal);
-      this.setupChatButtons(iframe);
+      Storage.moveTemplate(channelName, index, !isGlobal).then(() => {
+        this.setupChatButtons(iframe);
+      });
       menu.remove();
     });
 
@@ -1118,8 +1191,9 @@ const UI = {
 
       if (hasAlias) {
         // エイリアスを削除
-        Storage.removeAlias(channelName, index);
-        this.setupChatButtons(iframe);
+        Storage.removeAlias(channelName, index).then(() => {
+          this.setupChatButtons(iframe);
+        });
       } else {
         // エイリアスを設定（カスタムダイアログを表示）
         this.showAliasInputDialog(event, template, channelName, index, iframe);
@@ -1139,14 +1213,14 @@ const UI = {
     }, 100);
   },
 
-  showSettingsUI() {
+  async showSettingsUI() {
     if (this.managementModal) this.managementModal.remove();
 
     const modal = document.createElement("div");
     modal.id = "chat-helper-management-modal";
     this.managementModal = modal;
 
-    const data = Storage.getData();
+    const data = await Storage.getData();
     const channelInfo = Utils.getChannelInfo();
     const settings = Settings.get();
 
@@ -1333,11 +1407,12 @@ const UI = {
           const actualNewIndex = items.indexOf(draggedItem);
 
           if (draggedIndex !== actualNewIndex) {
-            Storage.reorderTemplate(draggedChannel, draggedIndex, actualNewIndex);
-            if (this.currentIframe) {
-              this.setupChatButtons(this.currentIframe);
-            }
-            items.forEach((li, idx) => li.dataset.index = idx);
+            Storage.reorderTemplate(draggedChannel, draggedIndex, actualNewIndex).then(() => {
+              if (this.currentIframe) {
+                this.setupChatButtons(this.currentIframe);
+              }
+              items.forEach((li, idx) => li.dataset.index = idx);
+            });
           }
         }
       });
@@ -1350,11 +1425,12 @@ const UI = {
         const channel = btn.dataset.channel;
         const index = parseInt(btn.dataset.index);
         if (confirm("このテンプレートを削除しますか？")) {
-          Storage.deleteTemplate(channel, index);
-          if (this.currentIframe) {
-            this.setupChatButtons(this.currentIframe);
-          }
-          this.showSettingsUI();
+          Storage.deleteTemplate(channel, index).then(() => {
+            if (this.currentIframe) {
+              this.setupChatButtons(this.currentIframe);
+            }
+            this.showSettingsUI();
+          });
         }
       });
     });
@@ -1692,7 +1768,7 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("[ChatHelper] YouTube Chat Helper v2.8 を初期化中...");
+    console.log("[ChatHelper] YouTube Chat Helper v3.2 を初期化中...");
     console.log("[ChatHelper] 現在のURL:", window.location.href);
 
     // iframe内で実行されているかチェック
