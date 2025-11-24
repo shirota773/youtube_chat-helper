@@ -175,33 +175,28 @@ const Settings = {
     autoLoadStamps: true
   },
 
-  get() {
-    // content.jsから注入された設定を優先
-    if (window.__CHAT_HELPER_SETTINGS__) {
-      return { ...this.defaults, ...window.__CHAT_HELPER_SETTINGS__ };
-    }
+  currentSettings: null,
 
-    // フォールバック: localStorageから読み込み
-    try {
-      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
-      return { ...this.defaults, ...saved };
-    } catch (e) {
-      return this.defaults;
+  get() {
+    // メモリ内の設定を優先
+    if (this.currentSettings) {
+      return { ...this.defaults, ...this.currentSettings };
     }
+    return this.defaults;
   },
 
   save(settings) {
-    // グローバル変数を更新
-    window.__CHAT_HELPER_SETTINGS__ = settings;
+    // メモリに保存
+    this.currentSettings = settings;
 
-    // localStorageにも保存（バックアップ）
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      return true;
-    } catch (e) {
-      console.error("設定保存エラー:", e);
-      return false;
-    }
+    // content.jsに保存を依頼（chrome.storageに保存）
+    window.postMessage({
+      source: "chat-helper-page",
+      type: "settings-save",
+      settings: settings
+    }, "*");
+
+    return true;
   },
 
   set(key, value) {
@@ -212,10 +207,22 @@ const Settings = {
 
   // 設定変更イベントのリスナー
   listenForChanges(callback) {
-    window.addEventListener("chatHelperSettingsChanged", (e) => {
-      window.__CHAT_HELPER_SETTINGS__ = e.detail;
-      callback(e.detail);
-    });
+    // 後で登録されるリスナーを保存
+    if (!window.__settingsChangeCallbacks__) {
+      window.__settingsChangeCallbacks__ = [];
+    }
+    window.__settingsChangeCallbacks__.push(callback);
+  },
+
+  // 設定を受信したときに呼ばれる
+  _onSettingsReceived(settings) {
+    console.log("[ChatHelper] 設定を受信:", settings);
+    this.currentSettings = settings;
+
+    // 登録されたコールバックを実行
+    if (window.__settingsChangeCallbacks__) {
+      window.__settingsChangeCallbacks__.forEach(cb => cb(settings));
+    }
   }
 };
 
@@ -227,6 +234,8 @@ const ChromeStorageHelper = {
   sendMessage(type, key, value = null) {
     return new Promise((resolve, reject) => {
       const requestId = `req_${++this.requestIdCounter}_${Date.now()}`;
+
+      console.log("[ChatHelper] ストレージリクエスト送信:", type, key, requestId);
 
       // レスポンスリスナーを登録
       this.pendingRequests.set(requestId, { resolve, reject });
@@ -240,13 +249,15 @@ const ChromeStorageHelper = {
         value: value
       }, "*");
 
-      // タイムアウト設定（5秒）
+      // タイムアウト設定（10秒に延長）
       setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
-          reject(new Error("Storage request timeout"));
+          console.error("[ChatHelper] ストレージリクエストタイムアウト:", type, key, requestId);
+          console.error("[ChatHelper] 未処理のリクエスト数:", this.pendingRequests.size);
+          reject(new Error(`Storage request timeout: ${type} ${key}`));
         }
-      }, 5000);
+      }, 10000);
     });
   },
 
@@ -266,13 +277,34 @@ window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || message.source !== "chat-helper-content") return;
 
+  console.log("[ChatHelper] メッセージを受信:", message.type);
+
+  // 設定の初期化
+  if (message.type === "settings-init") {
+    Settings._onSettingsReceived(message.settings);
+    return;
+  }
+
+  // 設定の変更通知
+  if (message.type === "settings-changed") {
+    Settings._onSettingsReceived(message.settings);
+    return;
+  }
+
+  // ストレージGETレスポンス
   if (message.type === "storage-get-response") {
+    console.log("[ChatHelper] ストレージGETレスポンス受信:", message.requestId);
     const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
     if (pending) {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
       pending.resolve(message.data);
     }
-  } else if (message.type === "storage-set-response") {
+    return;
+  }
+
+  // ストレージSETレスポンス
+  if (message.type === "storage-set-response") {
+    console.log("[ChatHelper] ストレージSETレスポンス受信:", message.requestId, message.success);
     const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
     if (pending) {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
@@ -282,6 +314,7 @@ window.addEventListener("message", (event) => {
         pending.reject(new Error(message.error || "Storage set failed"));
       }
     }
+    return;
   }
 });
 
@@ -1768,7 +1801,7 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("[ChatHelper] YouTube Chat Helper v3.2 を初期化中...");
+    console.log("[ChatHelper] YouTube Chat Helper v3.3 を初期化中...");
     console.log("[ChatHelper] 現在のURL:", window.location.href);
 
     // iframe内で実行されているかチェック

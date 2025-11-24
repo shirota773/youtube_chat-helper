@@ -6,12 +6,13 @@ const defaultSettings = {
     autoLoadStamps: true
 };
 
-// 設定をページに注入
+// 設定をページに注入（postMessageを使用）
 function injectSettings(settings) {
-    const script = document.createElement("script");
-    script.textContent = `window.__CHAT_HELPER_SETTINGS__ = ${JSON.stringify(settings)};`;
-    document.documentElement.appendChild(script);
-    script.remove();
+    window.postMessage({
+        source: "chat-helper-content",
+        type: "settings-init",
+        settings: settings
+    }, "*");
 }
 
 // メインスクリプトを注入
@@ -24,21 +25,24 @@ function injectScript(file) {
 
 // 設定変更をページに通知
 function notifySettingsChange(settings) {
-    const event = new CustomEvent("chatHelperSettingsChanged", {
-        detail: settings
-    });
-    window.dispatchEvent(event);
+    window.postMessage({
+        source: "chat-helper-content",
+        type: "settings-changed",
+        settings: settings
+    }, "*");
 }
 
 // 初期化
 chrome.storage.local.get(SETTINGS_KEY, (result) => {
     const settings = { ...defaultSettings, ...result[SETTINGS_KEY] };
 
-    // 設定を先に注入
-    injectSettings(settings);
-
-    // メインスクリプトを注入
+    // メインスクリプトを先に注入
     injectScript("inject.js");
+
+    // スクリプト読み込み後に設定を送信
+    setTimeout(() => {
+        injectSettings(settings);
+    }, 100);
 });
 
 // 設定変更を監視
@@ -56,12 +60,26 @@ window.addEventListener("message", (event) => {
 
     const message = event.data;
 
-    // ChatHelperのストレージメッセージのみ処理
+    // ChatHelperのメッセージのみ処理
     if (!message || message.source !== "chat-helper-page") return;
 
+    console.log("[Content] メッセージを受信:", message.type);
+
+    // 設定の保存
+    if (message.type === "settings-save") {
+        const dataToSave = {};
+        dataToSave[SETTINGS_KEY] = message.settings;
+        chrome.storage.local.set(dataToSave, () => {
+            console.log("[Content] 設定を保存しました:", message.settings);
+        });
+        return;
+    }
+
+    // ストレージGET
     if (message.type === "storage-get") {
-        // データ取得
+        console.log("[Content] ストレージGETリクエスト:", message.key, message.requestId);
         chrome.storage.local.get(message.key, (result) => {
+            console.log("[Content] ストレージGET結果:", message.key, result);
             window.postMessage({
                 source: "chat-helper-content",
                 type: "storage-get-response",
@@ -69,18 +87,25 @@ window.addEventListener("message", (event) => {
                 data: result[message.key]
             }, "*");
         });
-    } else if (message.type === "storage-set") {
-        // データ保存
+        return;
+    }
+
+    // ストレージSET
+    if (message.type === "storage-set") {
+        console.log("[Content] ストレージSETリクエスト:", message.key);
         const dataToSave = {};
         dataToSave[message.key] = message.value;
         chrome.storage.local.set(dataToSave, () => {
+            const success = !chrome.runtime.lastError;
+            console.log("[Content] ストレージSET結果:", success, chrome.runtime.lastError?.message);
             window.postMessage({
                 source: "chat-helper-content",
                 type: "storage-set-response",
                 requestId: message.requestId,
-                success: !chrome.runtime.lastError,
+                success: success,
                 error: chrome.runtime.lastError?.message
             }, "*");
         });
+        return;
     }
 });
