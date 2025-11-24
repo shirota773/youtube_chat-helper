@@ -30,9 +30,6 @@ const Utils = {
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
     if (isInIframe && isYouTubeChatIframe) {
-      console.log("[ChatHelper] iframe内のYouTubeチャットでチャンネル情報を取得中...");
-      console.log("[ChatHelper] iframe URL:", window.location.href);
-
       // 方法1: チャンネル名の要素から取得
       let channelElement = this.safeQuerySelector(
         document,
@@ -42,38 +39,28 @@ const Utils = {
       );
 
       if (channelElement) {
-        console.log("[ChatHelper] チャンネル名要素から取得成功:", channelElement.innerText.trim());
         return {
           name: channelElement.innerText.trim(),
           href: channelElement.href
         };
-      } else {
-        console.log("[ChatHelper] 方法1失敗: チャンネル名要素が見つかりません");
       }
 
       // 方法2: URLから動画IDを取得してチャンネル識別
       const urlParams = new URLSearchParams(window.location.search);
       const videoId = urlParams.get('v');
-      console.log("[ChatHelper] URLパラメータ:", window.location.search);
-      console.log("[ChatHelper] 動画ID (v):", videoId);
 
       if (videoId) {
-        console.log("[ChatHelper] URLから動画IDを取得:", videoId);
         return {
           name: `Video_${videoId}`,
           href: `https://www.youtube.com/watch?v=${videoId}`
         };
-      } else {
-        console.log("[ChatHelper] 方法2失敗: vパラメータが見つかりません");
       }
 
       // 方法3: 親URLを参照（Holodex対応）
       try {
         const parentUrl = document.referrer;
-        console.log("[ChatHelper] リファラー:", parentUrl);
 
         if (parentUrl && parentUrl.includes("holodex.net")) {
-          console.log("[ChatHelper] Holodexからの埋め込みを検出、リファラーを使用:", parentUrl);
           // Holodexの場合、リファラーURLから情報を抽出
           const holodexMatch = parentUrl.match(/holodex\.net\/watch\/([^/?]+)/);
           if (holodexMatch) {
@@ -93,35 +80,28 @@ const Utils = {
           const youtubeMatch = parentUrl.match(/[?&]v=([^&]+)/);
           if (youtubeMatch) {
             const youtubeVideoId = youtubeMatch[1];
-            console.log("[ChatHelper] リファラーから動画IDを取得:", youtubeVideoId);
             return {
               name: `Video_${youtubeVideoId}`,
               href: `https://www.youtube.com/watch?v=${youtubeVideoId}`
             };
           }
         }
-        console.log("[ChatHelper] 方法3失敗: リファラーから動画IDを抽出できません");
       } catch (e) {
         console.warn("[ChatHelper] リファラーの取得に失敗:", e);
       }
 
       // 方法4: iframeのURL自体から情報を取得
-      console.log("[ChatHelper] フォールバック: iframe URL自体から情報を取得");
       const iframeUrl = window.location.href;
       const iframeVideoMatch = iframeUrl.match(/[?&]v=([^&]+)/);
       if (iframeVideoMatch) {
         const fallbackVideoId = iframeVideoMatch[1];
-        console.log("[ChatHelper] iframe URLから動画IDを取得:", fallbackVideoId);
         return {
           name: `Video_${fallbackVideoId}`,
           href: `https://www.youtube.com/watch?v=${fallbackVideoId}`
         };
-      } else {
-        console.log("[ChatHelper] 方法4失敗: iframe URLから動画IDを抽出できません");
       }
 
       // 最終フォールバック: 汎用的なチャンネル名を返す
-      console.warn("[ChatHelper] チャンネル情報を取得できませんでした。汎用的な名前を使用します。");
       return {
         name: "Unknown_Channel",
         href: window.location.href
@@ -240,7 +220,6 @@ const Settings = {
 
   // 設定を受信したときに呼ばれる
   _onSettingsReceived(settings) {
-    console.log("[ChatHelper] 設定を受信:", settings);
     this.currentSettings = settings;
 
     // 登録されたコールバックを実行
@@ -259,8 +238,6 @@ const ChromeStorageHelper = {
     return new Promise((resolve, reject) => {
       const requestId = `req_${++this.requestIdCounter}_${Date.now()}`;
 
-      console.log("[ChatHelper] ストレージリクエスト送信:", type, key, requestId);
-
       // レスポンスリスナーを登録
       this.pendingRequests.set(requestId, { resolve, reject });
 
@@ -273,12 +250,11 @@ const ChromeStorageHelper = {
         value: value
       }, "*");
 
-      // タイムアウト設定（10秒に延長）
+      // タイムアウト設定（10秒）
       setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
-          console.error("[ChatHelper] ストレージリクエストタイムアウト:", type, key, requestId);
-          console.error("[ChatHelper] 未処理のリクエスト数:", this.pendingRequests.size);
+          console.error("[ChatHelper] ストレージタイムアウト:", type, key);
           reject(new Error(`Storage request timeout: ${type} ${key}`));
         }
       }, 10000);
@@ -301,8 +277,6 @@ window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || message.source !== "chat-helper-content") return;
 
-  console.log("[ChatHelper] メッセージを受信:", message.type);
-
   // 設定の初期化
   if (message.type === "settings-init") {
     Settings._onSettingsReceived(message.settings);
@@ -317,12 +291,11 @@ window.addEventListener("message", (event) => {
 
   // ストレージGETレスポンス
   if (message.type === "storage-get-response") {
-    console.log("[ChatHelper] ストレージGETレスポンス受信:", message.requestId);
     const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
     if (pending) {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
       if (message.error) {
-        console.error("[ChatHelper] ストレージGETエラー:", message.error);
+        console.error("[ChatHelper] ストレージエラー:", message.error);
         if (message.error.includes("Extension context invalidated")) {
           console.warn("[ChatHelper] 拡張機能がリロードされました。ページをリロードしてください。");
         }
@@ -336,7 +309,6 @@ window.addEventListener("message", (event) => {
 
   // ストレージSETレスポンス
   if (message.type === "storage-set-response") {
-    console.log("[ChatHelper] ストレージSETレスポンス受信:", message.requestId, message.success);
     const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
     if (pending) {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
@@ -383,11 +355,9 @@ const Storage = {
     if (isGlobal) {
       if (!data.global) data.global = [];
       data.global.push(template);
-      console.log("[ChatHelper] グローバルテンプレートとして保存しました。");
     } else {
       const channelInfo = Utils.getChannelInfo();
       if (!channelInfo || !channelInfo.name) {
-        console.warn("[ChatHelper] チャンネル情報が取得できないため、グローバルとして保存します。");
         if (!data.global) data.global = [];
         data.global.push(template);
         return await this.saveData(data);
@@ -403,7 +373,6 @@ const Storage = {
       } else {
         data.channels[channelIndex].data.push(template);
       }
-      console.log("[ChatHelper] チャンネル別テンプレートとして保存しました:", channelInfo.name);
     }
 
     return await this.saveData(data);
@@ -809,24 +778,18 @@ const UI = {
 
     // iframe.contentDocument が null の場合は早期リターン
     if (!iframe.contentDocument) {
-      console.warn("[ChatHelper] iframe.contentDocument is null, skipping setupChatButtons");
       return;
     }
-
-    console.log("[ChatHelper] setupChatButtons: ボタンのセットアップを開始");
 
     /* emoji load */
     const emojiButton = Utils.safeQuerySelector(
       iframe.contentDocument,
       "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
     );
-    if (!emojiButton) {
-      console.log("[ChatHelper] 絵文字ボタンが見つかりません。");
-      return;
-    }
+    if (!emojiButton) return;
+
     emojiButton.click();
     emojiButton.click();
-    console.log("[ChatHelper] スタンプを自動読み込みしました。");
 
     const chatContainer = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -836,10 +799,7 @@ const UI = {
       iframe.contentDocument,
       "#chat-messages #input-panel #container > #top"
     );
-    if (!chatContainer) {
-      console.warn("[ChatHelper] チャットコンテナが見つかりません。");
-      return;
-    }
+    if (!chatContainer) return;
 
     const existingWrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
     if (existingWrapper) existingWrapper.remove();
@@ -848,10 +808,7 @@ const UI = {
     buttonWrapper.id = "chat-helper-buttons";
 
     const channelInfo = Utils.getChannelInfo();
-    console.log("[ChatHelper] 取得したチャンネル情報:", channelInfo);
-
     const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
-    console.log("[ChatHelper] テンプレート数 - グローバル:", templates.global.length, "チャンネル:", templates.channel.length);
 
     // グローバルテンプレートボタン
     templates.global.forEach((entry, idx) => {
@@ -865,8 +822,6 @@ const UI = {
         const btn = this.createTemplateButton(entry, idx, channelInfo.name, iframe, false);
         buttonWrapper.appendChild(btn);
       });
-    } else {
-      console.warn("[ChatHelper] チャンネル情報がないため、チャンネル別テンプレートは表示されません。");
     }
 
     // 保存ボタン（チャンネル用）
@@ -874,24 +829,14 @@ const UI = {
       const data = this.readChatInput(iframe);
       if (data && data.length > 0) {
         const currentChannelInfo = Utils.getChannelInfo();
-        if (currentChannelInfo && currentChannelInfo.name) {
-          Storage.saveTemplate(data, false).then(() => {
-            this.setupChatButtons(iframe);
-          });
-        } else {
-          console.warn("[ChatHelper] チャンネル情報がないため、グローバルとして保存します。");
-          Storage.saveTemplate(data, true).then(() => {
-            this.setupChatButtons(iframe);
-          });
-        }
+        Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
+          this.setupChatButtons(iframe);
+        });
       }
     }, "save-btn");
     buttonWrapper.appendChild(saveButton);
 
-    // chatContainer.appendChild(buttonWrapper);
     chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
-
-    console.log("[ChatHelper] setupChatButtons: ボタンのセットアップ完了");
 
     // ドラッグ＆ドロップを設定
     this.setupButtonDragAndDrop(iframe);
@@ -1833,32 +1778,23 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("[ChatHelper] YouTube Chat Helper v3.5 を初期化中...");
-    console.log("[ChatHelper] 現在のURL:", window.location.href);
-
     // iframe内で実行されているかチェック
     const isInIframe = window.self !== window.top;
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
-    console.log("[ChatHelper] isInIframe:", isInIframe);
-    console.log("[ChatHelper] isYouTubeChatIframe:", isYouTubeChatIframe);
-
     if (isInIframe && isYouTubeChatIframe) {
       // iframe内のYouTubeチャット - 直接初期化
-      console.log("[ChatHelper] iframe内のチャットを検出、直接初期化を開始");
       this.initializeCurrentFrame();
       return;
     }
 
     // 通常のページ（YouTube/Holodex）
-    console.log("[ChatHelper] 通常のページとして初期化（親ページ）");
     UI.addMainPageStyles();
     this.observeDOM();
     this.checkForChatFrame();
 
     // 設定変更を監視
     Settings.listenForChanges((newSettings) => {
-      console.log("[ChatHelper] 設定が変更されました:", newSettings);
       CCPPP.enabled = newSettings.ccpppEnabled;
 
       // CCPPPが有効になった場合、再初期化
@@ -1869,10 +1805,6 @@ const ChatHelper = {
   },
 
   initializeCurrentFrame() {
-    // 現在のウィンドウがiframe内のチャットの場合、自分自身を初期化
-    console.log("[ChatHelper] initializeCurrentFrame: 現在のフレームを初期化開始");
-    console.log("[ChatHelper] document.referrer:", document.referrer);
-
     // iframe要素の代わりに、windowオブジェクトを使用
     const pseudoIframe = {
       contentDocument: document,
@@ -1880,28 +1812,20 @@ const ChatHelper = {
     };
 
     try {
-      console.log("[ChatHelper] UI.addStyles を実行");
       UI.addStyles(pseudoIframe);
-
-      console.log("[ChatHelper] UI.setupChatButtons を実行");
       UI.setupChatButtons(pseudoIframe);
-
-      console.log("[ChatHelper] StampLoader.autoLoadStamps を実行");
       StampLoader.autoLoadStamps(pseudoIframe);
 
       // 設定変更を監視
       Settings.listenForChanges((newSettings) => {
-        console.log("[ChatHelper] iframe内: 設定が変更されました:", newSettings);
         CCPPP.enabled = newSettings.ccpppEnabled;
 
         if (newSettings.ccpppEnabled) {
           CCPPP.init(pseudoIframe);
         }
       });
-
-      console.log("[ChatHelper] initializeCurrentFrame: 初期化完了");
     } catch (e) {
-      console.error("[ChatHelper] initializeCurrentFrame: エラー", e);
+      console.error("[ChatHelper] 初期化エラー:", e);
     }
   },
 

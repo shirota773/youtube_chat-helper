@@ -63,25 +63,20 @@ window.addEventListener("message", (event) => {
     // ChatHelperのメッセージのみ処理
     if (!message || message.source !== "chat-helper-page") return;
 
-    console.log("[Content] メッセージを受信:", message.type);
-
     // 設定の保存
     if (message.type === "settings-save") {
         const dataToSave = {};
         dataToSave[SETTINGS_KEY] = message.settings;
-        chrome.storage.local.set(dataToSave, () => {
-            console.log("[Content] 設定を保存しました:", message.settings);
-        });
+        chrome.storage.local.set(dataToSave);
         return;
     }
 
     // ストレージGET
     if (message.type === "storage-get") {
-        console.log("[Content] ストレージGETリクエスト:", message.key, message.requestId);
         try {
             chrome.storage.local.get(message.key, (result) => {
                 if (chrome.runtime.lastError) {
-                    console.error("[Content] ストレージGETエラー:", chrome.runtime.lastError);
+                    console.error("[Content] ストレージエラー:", chrome.runtime.lastError);
                     window.postMessage({
                         source: "chat-helper-content",
                         type: "storage-get-response",
@@ -91,7 +86,6 @@ window.addEventListener("message", (event) => {
                     }, "*");
                     return;
                 }
-                console.log("[Content] ストレージGET結果:", message.key, result);
                 window.postMessage({
                     source: "chat-helper-content",
                     type: "storage-get-response",
@@ -114,18 +108,15 @@ window.addEventListener("message", (event) => {
 
     // ストレージSET
     if (message.type === "storage-set") {
-        console.log("[Content] ストレージSETリクエスト:", message.key);
         try {
             const dataToSave = {};
             dataToSave[message.key] = message.value;
             chrome.storage.local.set(dataToSave, () => {
-                const success = !chrome.runtime.lastError;
-                console.log("[Content] ストレージSET結果:", success, chrome.runtime.lastError?.message);
                 window.postMessage({
                     source: "chat-helper-content",
                     type: "storage-set-response",
                     requestId: message.requestId,
-                    success: success,
+                    success: !chrome.runtime.lastError,
                     error: chrome.runtime.lastError?.message
                 }, "*");
             });
