@@ -64,6 +64,11 @@ YouTube Chat Helper は、YouTube および Holodex のライブチャットの�
 2. **グローバルに移動** または **ローカルに移動** を選択
 3. グローバルテンプレートは紫色、ローカルテンプレートは青色で表示されます
 
+## デモ
+以下の GIF で拡張機能の使用方法を示します:
+
+![使用例](gif/example.gif)
+
 ## 対応サイト
 - **YouTube** (youtube.com)
 - **Holodex** (holodex.net)
