@@ -703,6 +703,7 @@ const CCPPP = {
 const UI = {
   currentIframe: null,
   managementModal: null,
+  isSettingUpButtons: false, // Guard against concurrent setupChatButtons calls
 
   readChatInput(iframe) {
     const inputElement = Utils.safeQuerySelector(
@@ -774,72 +775,84 @@ const UI = {
   },
 
   async setupChatButtons(iframe) {
-    this.currentIframe = iframe;
-
-    // iframe.contentDocument が null の場合は早期リターン
-    if (!iframe.contentDocument) {
+    // Guard against concurrent calls
+    if (this.isSettingUpButtons) {
       return;
     }
 
-    /* emoji load */
-    const emojiButton = Utils.safeQuerySelector(
-      iframe.contentDocument,
-      "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
-    );
-    if (!emojiButton) return;
+    try {
+      this.isSettingUpButtons = true;
+      this.currentIframe = iframe;
 
-    emojiButton.click();
-    emojiButton.click();
+      // iframe.contentDocument が null の場合は早期リターン
+      if (!iframe.contentDocument) {
+        return;
+      }
 
-    const chatContainer = Utils.safeQuerySelector(
-      iframe.contentDocument,
-      "#chat-messages #input-panel #container"
-    );
-    const chatContainerTop = Utils.safeQuerySelector(
-      iframe.contentDocument,
-      "#chat-messages #input-panel #container > #top"
-    );
-    if (!chatContainer) return;
+      /* emoji load */
+      const emojiButton = Utils.safeQuerySelector(
+        iframe.contentDocument,
+        "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
+      );
+      if (!emojiButton) return;
 
-    const existingWrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
-    if (existingWrapper) existingWrapper.remove();
+      emojiButton.click();
+      emojiButton.click();
 
-    const buttonWrapper = document.createElement("div");
-    buttonWrapper.id = "chat-helper-buttons";
+      const chatContainer = Utils.safeQuerySelector(
+        iframe.contentDocument,
+        "#chat-messages #input-panel #container"
+      );
+      const chatContainerTop = Utils.safeQuerySelector(
+        iframe.contentDocument,
+        "#chat-messages #input-panel #container > #top"
+      );
+      if (!chatContainer) return;
 
-    const channelInfo = Utils.getChannelInfo();
-    const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
+      // Remove ALL existing wrappers (in case there are multiple)
+      const existingWrappers = Utils.safeQuerySelectorAll(iframe.contentDocument, "#chat-helper-buttons");
+      existingWrappers.forEach(wrapper => wrapper.remove());
 
-    // グローバルテンプレートボタン
-    templates.global.forEach((entry, idx) => {
-      const btn = this.createTemplateButton(entry, idx, GLOBAL_CHANNEL_KEY, iframe, true);
-      buttonWrapper.appendChild(btn);
-    });
+      const buttonWrapper = document.createElement("div");
+      buttonWrapper.id = "chat-helper-buttons";
 
-    // チャンネル別テンプレートボタン（チャンネル情報がある場合のみ）
-    if (channelInfo && channelInfo.name) {
-      templates.channel.forEach((entry, idx) => {
-        const btn = this.createTemplateButton(entry, idx, channelInfo.name, iframe, false);
+      const channelInfo = Utils.getChannelInfo();
+      const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
+
+      // グローバルテンプレートボタン
+      templates.global.forEach((entry, idx) => {
+        const btn = this.createTemplateButton(entry, idx, GLOBAL_CHANNEL_KEY, iframe, true);
         buttonWrapper.appendChild(btn);
       });
-    }
 
-    // 保存ボタン（チャンネル用）
-    const saveButton = this.createButton("save-channel-btn", "Save", () => {
-      const data = this.readChatInput(iframe);
-      if (data && data.length > 0) {
-        const currentChannelInfo = Utils.getChannelInfo();
-        Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
-          this.setupChatButtons(iframe);
+      // チャンネル別テンプレートボタン（チャンネル情報がある場合のみ）
+      if (channelInfo && channelInfo.name) {
+        templates.channel.forEach((entry, idx) => {
+          const btn = this.createTemplateButton(entry, idx, channelInfo.name, iframe, false);
+          buttonWrapper.appendChild(btn);
         });
       }
-    }, "save-btn");
-    buttonWrapper.appendChild(saveButton);
 
-    chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
+      // 保存ボタン（チャンネル用）
+      const saveButton = this.createButton("save-channel-btn", "Save", () => {
+        const data = this.readChatInput(iframe);
+        if (data && data.length > 0) {
+          const currentChannelInfo = Utils.getChannelInfo();
+          Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
+            this.setupChatButtons(iframe);
+          });
+        }
+      }, "save-btn");
+      buttonWrapper.appendChild(saveButton);
 
-    // ドラッグ＆ドロップを設定
-    this.setupButtonDragAndDrop(iframe);
+      chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
+
+      // ドラッグ＆ドロップを設定
+      this.setupButtonDragAndDrop(iframe);
+    } finally {
+      // Always clear the guard flag
+      this.isSettingUpButtons = false;
+    }
   },
 
   createTemplateButton(entry, index, channelName, iframe, isGlobal) {
