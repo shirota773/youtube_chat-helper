@@ -78,34 +78,67 @@ window.addEventListener("message", (event) => {
     // ストレージGET
     if (message.type === "storage-get") {
         console.log("[Content] ストレージGETリクエスト:", message.key, message.requestId);
-        chrome.storage.local.get(message.key, (result) => {
-            console.log("[Content] ストレージGET結果:", message.key, result);
+        try {
+            chrome.storage.local.get(message.key, (result) => {
+                if (chrome.runtime.lastError) {
+                    console.error("[Content] ストレージGETエラー:", chrome.runtime.lastError);
+                    window.postMessage({
+                        source: "chat-helper-content",
+                        type: "storage-get-response",
+                        requestId: message.requestId,
+                        data: null,
+                        error: chrome.runtime.lastError.message
+                    }, "*");
+                    return;
+                }
+                console.log("[Content] ストレージGET結果:", message.key, result);
+                window.postMessage({
+                    source: "chat-helper-content",
+                    type: "storage-get-response",
+                    requestId: message.requestId,
+                    data: result[message.key]
+                }, "*");
+            });
+        } catch (e) {
+            console.error("[Content] 拡張機能コンテキストが無効化されました:", e);
             window.postMessage({
                 source: "chat-helper-content",
                 type: "storage-get-response",
                 requestId: message.requestId,
-                data: result[message.key]
+                data: null,
+                error: "Extension context invalidated. Please reload the page."
             }, "*");
-        });
+        }
         return;
     }
 
     // ストレージSET
     if (message.type === "storage-set") {
         console.log("[Content] ストレージSETリクエスト:", message.key);
-        const dataToSave = {};
-        dataToSave[message.key] = message.value;
-        chrome.storage.local.set(dataToSave, () => {
-            const success = !chrome.runtime.lastError;
-            console.log("[Content] ストレージSET結果:", success, chrome.runtime.lastError?.message);
+        try {
+            const dataToSave = {};
+            dataToSave[message.key] = message.value;
+            chrome.storage.local.set(dataToSave, () => {
+                const success = !chrome.runtime.lastError;
+                console.log("[Content] ストレージSET結果:", success, chrome.runtime.lastError?.message);
+                window.postMessage({
+                    source: "chat-helper-content",
+                    type: "storage-set-response",
+                    requestId: message.requestId,
+                    success: success,
+                    error: chrome.runtime.lastError?.message
+                }, "*");
+            });
+        } catch (e) {
+            console.error("[Content] 拡張機能コンテキストが無効化されました:", e);
             window.postMessage({
                 source: "chat-helper-content",
                 type: "storage-set-response",
                 requestId: message.requestId,
-                success: success,
-                error: chrome.runtime.lastError?.message
+                success: false,
+                error: "Extension context invalidated. Please reload the page."
             }, "*");
-        });
+        }
         return;
     }
 });

@@ -321,7 +321,15 @@ window.addEventListener("message", (event) => {
     const pending = ChromeStorageHelper.pendingRequests.get(message.requestId);
     if (pending) {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
-      pending.resolve(message.data);
+      if (message.error) {
+        console.error("[ChatHelper] ストレージGETエラー:", message.error);
+        if (message.error.includes("Extension context invalidated")) {
+          console.warn("[ChatHelper] 拡張機能がリロードされました。ページをリロードしてください。");
+        }
+        pending.reject(new Error(message.error));
+      } else {
+        pending.resolve(message.data);
+      }
     }
     return;
   }
@@ -1825,7 +1833,7 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("[ChatHelper] YouTube Chat Helper v3.4 を初期化中...");
+    console.log("[ChatHelper] YouTube Chat Helper v3.5 を初期化中...");
     console.log("[ChatHelper] 現在のURL:", window.location.href);
 
     // iframe内で実行されているかチェック
