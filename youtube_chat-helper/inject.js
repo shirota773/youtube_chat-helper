@@ -31,6 +31,7 @@ const Utils = {
 
     if (isInIframe && isYouTubeChatIframe) {
       console.log("[ChatHelper] iframe内のYouTubeチャットでチャンネル情報を取得中...");
+      console.log("[ChatHelper] iframe URL:", window.location.href);
 
       // 方法1: チャンネル名の要素から取得
       let channelElement = this.safeQuerySelector(
@@ -46,22 +47,31 @@ const Utils = {
           name: channelElement.innerText.trim(),
           href: channelElement.href
         };
+      } else {
+        console.log("[ChatHelper] 方法1失敗: チャンネル名要素が見つかりません");
       }
 
       // 方法2: URLから動画IDを取得してチャンネル識別
       const urlParams = new URLSearchParams(window.location.search);
       const videoId = urlParams.get('v');
+      console.log("[ChatHelper] URLパラメータ:", window.location.search);
+      console.log("[ChatHelper] 動画ID (v):", videoId);
+
       if (videoId) {
         console.log("[ChatHelper] URLから動画IDを取得:", videoId);
         return {
           name: `Video_${videoId}`,
           href: `https://www.youtube.com/watch?v=${videoId}`
         };
+      } else {
+        console.log("[ChatHelper] 方法2失敗: vパラメータが見つかりません");
       }
 
       // 方法3: 親URLを参照（Holodex対応）
       try {
         const parentUrl = document.referrer;
+        console.log("[ChatHelper] リファラー:", parentUrl);
+
         if (parentUrl && parentUrl.includes("holodex.net")) {
           console.log("[ChatHelper] Holodexからの埋め込みを検出、リファラーを使用:", parentUrl);
           // Holodexの場合、リファラーURLから情報を抽出
@@ -78,7 +88,19 @@ const Utils = {
             name: `Holodex_Chat`,
             href: parentUrl
           };
+        } else if (parentUrl && parentUrl.includes("youtube.com")) {
+          // YouTubeからのリファラーから動画IDを抽出
+          const youtubeMatch = parentUrl.match(/[?&]v=([^&]+)/);
+          if (youtubeMatch) {
+            const youtubeVideoId = youtubeMatch[1];
+            console.log("[ChatHelper] リファラーから動画IDを取得:", youtubeVideoId);
+            return {
+              name: `Video_${youtubeVideoId}`,
+              href: `https://www.youtube.com/watch?v=${youtubeVideoId}`
+            };
+          }
         }
+        console.log("[ChatHelper] 方法3失敗: リファラーから動画IDを抽出できません");
       } catch (e) {
         console.warn("[ChatHelper] リファラーの取得に失敗:", e);
       }
@@ -94,6 +116,8 @@ const Utils = {
           name: `Video_${fallbackVideoId}`,
           href: `https://www.youtube.com/watch?v=${fallbackVideoId}`
         };
+      } else {
+        console.log("[ChatHelper] 方法4失敗: iframe URLから動画IDを抽出できません");
       }
 
       // 最終フォールバック: 汎用的なチャンネル名を返す
@@ -1801,7 +1825,7 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("[ChatHelper] YouTube Chat Helper v3.3 を初期化中...");
+    console.log("[ChatHelper] YouTube Chat Helper v3.4 を初期化中...");
     console.log("[ChatHelper] 現在のURL:", window.location.href);
 
     // iframe内で実行されているかチェック
