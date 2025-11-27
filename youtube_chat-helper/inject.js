@@ -234,9 +234,16 @@ const ChromeStorageHelper = {
   requestIdCounter: 0,
   pendingRequests: new Map(),
   reloadNotificationShown: false,
+  extensionInvalidated: false, // 拡張機能が無効化されたフラグ
 
   sendMessage(type, key, value = null) {
     return new Promise((resolve, reject) => {
+      // 拡張機能が既に無効化されている場合は、静かに拒否
+      if (this.extensionInvalidated) {
+        reject(new Error("Extension context invalidated"));
+        return;
+      }
+
       const requestId = `req_${++this.requestIdCounter}_${Date.now()}`;
 
       // レスポンスリスナーを登録
@@ -255,7 +262,10 @@ const ChromeStorageHelper = {
       setTimeout(() => {
         if (this.pendingRequests.has(requestId)) {
           this.pendingRequests.delete(requestId);
-          console.error("[ChatHelper] ストレージタイムアウト:", type, key);
+          // 拡張機能が無効化されている場合はログを出さない
+          if (!this.extensionInvalidated) {
+            console.error("[ChatHelper] ストレージタイムアウト:", type, key);
+          }
           reject(new Error(`Storage request timeout: ${type} ${key}`));
         }
       }, 10000);
@@ -273,12 +283,9 @@ const ChromeStorageHelper = {
   showReloadNotification() {
     if (this.reloadNotificationShown) return;
     this.reloadNotificationShown = true;
+    this.extensionInvalidated = true; // フラグを設定
 
-    // コンソールにメッセージを表示
-    console.warn("%c[ChatHelper] 拡張機能が更新されました", "color: #ff9800; font-size: 14px; font-weight: bold;");
-    console.warn("%cページをリロードしてください（F5キーまたはCtrl+R）", "color: #ff9800; font-size: 12px;");
-
-    // ページ上に目立つ通知バナーを表示
+    // ページ上に目立つ通知バナーを表示（コンソールログは省略）
     this.showReloadBanner();
   },
 
@@ -387,7 +394,6 @@ window.addEventListener("message", (event) => {
 
   // 拡張機能が再読み込みされた通知
   if (message.type === "extension-reloaded") {
-    console.warn("[ChatHelper] 拡張機能が再読み込みされました。");
     ChromeStorageHelper.showReloadNotification();
     return;
   }
@@ -411,10 +417,10 @@ window.addEventListener("message", (event) => {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
       if (message.error) {
         if (message.error.includes("Extension context invalidated")) {
-          console.warn("[ChatHelper] 拡張機能がリロードされました。ページをリロードしてください。");
-          // ユーザーにページリロードを促す通知を表示
+          // 通知を表示（ログは出さない）
           ChromeStorageHelper.showReloadNotification();
-        } else {
+        } else if (!ChromeStorageHelper.extensionInvalidated) {
+          // 拡張機能が無効化されていない場合のみエラーログを出す
           console.error("[ChatHelper] ストレージエラー:", message.error);
         }
         pending.reject(new Error(message.error));
@@ -434,9 +440,10 @@ window.addEventListener("message", (event) => {
         pending.resolve(true);
       } else {
         if (message.error && message.error.includes("Extension context invalidated")) {
-          console.warn("[ChatHelper] 拡張機能がリロードされました。ページをリロードしてください。");
+          // 通知を表示（ログは出さない）
           ChromeStorageHelper.showReloadNotification();
-        } else {
+        } else if (!ChromeStorageHelper.extensionInvalidated) {
+          // 拡張機能が無効化されていない場合のみエラーログを出す
           console.error("[ChatHelper] ストレージ保存エラー:", message.error);
         }
         pending.reject(new Error(message.error || "Storage set failed"));
@@ -453,9 +460,9 @@ const Storage = {
       const data = await ChromeStorageHelper.get(STORAGE_KEY);
       return data || { channels: [], global: [] };
     } catch (e) {
-      console.error("[ChatHelper] ストレージデータの読み込みエラー:", e);
-      if (e.message && e.message.includes("Extension context invalidated")) {
-        console.warn("[ChatHelper] 拡張機能のコンテキストが無効です。データの読み込みをスキップします。");
+      // 拡張機能が無効化されていない場合のみエラーログを出す
+      if (!ChromeStorageHelper.extensionInvalidated && !e.message?.includes("Extension context invalidated")) {
+        console.error("[ChatHelper] ストレージデータの読み込みエラー:", e);
       }
       return { channels: [], global: [] };
     }
@@ -466,9 +473,9 @@ const Storage = {
       await ChromeStorageHelper.set(STORAGE_KEY, data);
       return true;
     } catch (e) {
-      console.error("[ChatHelper] ストレージデータの保存エラー:", e);
-      if (e.message && e.message.includes("Extension context invalidated")) {
-        console.warn("[ChatHelper] 拡張機能のコンテキストが無効です。データの保存をスキップします。");
+      // 拡張機能が無効化されていない場合のみエラーログを出す
+      if (!ChromeStorageHelper.extensionInvalidated && !e.message?.includes("Extension context invalidated")) {
+        console.error("[ChatHelper] ストレージデータの保存エラー:", e);
       }
       return false;
     }

@@ -51,7 +51,7 @@ function notifyExtensionReloaded() {
 
 // 初期化
 if (!isExtensionContextValid()) {
-    console.warn("[Content] 拡張機能のコンテキストが無効です。ページをリロードしてください。");
+    // 静かに処理（inject.js が既にある場合は通知バナーが表示される）
 } else {
     // 既存のスクリプトに通知（既に注入されている場合）
     notifyExtensionReloaded();
@@ -92,7 +92,7 @@ window.addEventListener("message", (event) => {
     // 設定の保存
     if (message.type === "settings-save") {
         if (!isExtensionContextValid()) {
-            console.warn("[Content] 拡張機能のコンテキストが無効です。設定を保存できません。");
+            // 静かに処理（通知バナーは inject.js で表示される）
             return;
         }
         const dataToSave = {};
@@ -117,7 +117,6 @@ window.addEventListener("message", (event) => {
         try {
             chrome.storage.local.get(message.key, (result) => {
                 if (chrome.runtime.lastError) {
-                    console.error("[Content] ストレージエラー:", chrome.runtime.lastError);
                     window.postMessage({
                         source: "chat-helper-content",
                         type: "storage-get-response",
@@ -135,7 +134,7 @@ window.addEventListener("message", (event) => {
                 }, "*");
             });
         } catch (e) {
-            console.error("[Content] 拡張機能コンテキストが無効化されました:", e);
+            // エラーログを出さずに静かに処理（通知バナーは inject.js で表示される）
             window.postMessage({
                 source: "chat-helper-content",
                 type: "storage-get-response",
@@ -173,7 +172,7 @@ window.addEventListener("message", (event) => {
                 }, "*");
             });
         } catch (e) {
-            console.error("[Content] 拡張機能コンテキストが無効化されました:", e);
+            // エラーログを出さずに静かに処理（通知バナーは inject.js で表示される）
             window.postMessage({
                 source: "chat-helper-content",
                 type: "storage-set-response",
