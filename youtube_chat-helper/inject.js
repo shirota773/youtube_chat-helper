@@ -277,6 +277,104 @@ const ChromeStorageHelper = {
     // コンソールにメッセージを表示
     console.warn("%c[ChatHelper] 拡張機能が更新されました", "color: #ff9800; font-size: 14px; font-weight: bold;");
     console.warn("%cページをリロードしてください（F5キーまたはCtrl+R）", "color: #ff9800; font-size: 12px;");
+
+    // ページ上に目立つ通知バナーを表示
+    this.showReloadBanner();
+  },
+
+  showReloadBanner() {
+    // 既存のバナーがあれば何もしない
+    if (document.getElementById("chat-helper-reload-banner")) return;
+
+    const banner = document.createElement("div");
+    banner.id = "chat-helper-reload-banner";
+    banner.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #ff9800 0%, #ff6b00 100%);
+      color: white;
+      padding: 16px 20px;
+      text-align: center;
+      z-index: 999999;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      animation: slideDown 0.3s ease-out;
+    `;
+
+    banner.innerHTML = `
+      <div style="max-width: 800px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
+        <span style="font-size: 20px;">⚠️</span>
+        <span style="font-size: 16px; font-weight: bold;">YouTube Chat Helper が更新されました</span>
+        <span style="font-size: 14px;">ページをリロードしてください</span>
+        <button id="chat-helper-reload-btn" style="
+          background: white;
+          color: #ff9800;
+          border: none;
+          padding: 8px 20px;
+          border-radius: 20px;
+          font-weight: bold;
+          cursor: pointer;
+          font-size: 14px;
+          transition: transform 0.2s;
+        ">今すぐリロード (F5)</button>
+        <button id="chat-helper-dismiss-btn" style="
+          background: transparent;
+          color: white;
+          border: 2px solid white;
+          padding: 6px 16px;
+          border-radius: 20px;
+          font-weight: bold;
+          cursor: pointer;
+          font-size: 13px;
+          transition: background 0.2s;
+        ">後で</button>
+      </div>
+    `;
+
+    // アニメーションのスタイルを追加
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes slideDown {
+        from {
+          transform: translateY(-100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      #chat-helper-reload-btn:hover {
+        transform: scale(1.05);
+      }
+      #chat-helper-dismiss-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+    `;
+    document.head.appendChild(style);
+
+    document.body.appendChild(banner);
+
+    // リロードボタンのイベント
+    document.getElementById("chat-helper-reload-btn").addEventListener("click", () => {
+      window.location.reload();
+    });
+
+    // 閉じるボタンのイベント
+    document.getElementById("chat-helper-dismiss-btn").addEventListener("click", () => {
+      banner.style.animation = "slideDown 0.3s ease-out reverse";
+      setTimeout(() => banner.remove(), 300);
+    });
+
+    // 10秒後に自動的に消す（ユーザーが気づいている場合）
+    setTimeout(() => {
+      if (banner.parentNode) {
+        banner.style.animation = "slideDown 0.3s ease-out reverse";
+        setTimeout(() => banner.remove(), 300);
+      }
+    }, 10000);
   }
 };
 
@@ -286,6 +384,13 @@ window.addEventListener("message", (event) => {
 
   const message = event.data;
   if (!message || message.source !== "chat-helper-content") return;
+
+  // 拡張機能が再読み込みされた通知
+  if (message.type === "extension-reloaded") {
+    console.warn("[ChatHelper] 拡張機能が再読み込みされました。");
+    ChromeStorageHelper.showReloadNotification();
+    return;
+  }
 
   // 設定の初期化
   if (message.type === "settings-init") {

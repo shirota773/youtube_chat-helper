@@ -41,10 +41,21 @@ function notifySettingsChange(settings) {
     }, "*");
 }
 
+// 拡張機能が再読み込みされたことを既存のスクリプトに通知
+function notifyExtensionReloaded() {
+    window.postMessage({
+        source: "chat-helper-content",
+        type: "extension-reloaded"
+    }, "*");
+}
+
 // 初期化
 if (!isExtensionContextValid()) {
     console.warn("[Content] 拡張機能のコンテキストが無効です。ページをリロードしてください。");
 } else {
+    // 既存のスクリプトに通知（既に注入されている場合）
+    notifyExtensionReloaded();
+
     chrome.storage.local.get(SETTINGS_KEY, (result) => {
         const settings = { ...defaultSettings, ...result[SETTINGS_KEY] };
 
