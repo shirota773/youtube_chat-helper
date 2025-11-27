@@ -233,6 +233,7 @@ const Settings = {
 const ChromeStorageHelper = {
   requestIdCounter: 0,
   pendingRequests: new Map(),
+  reloadNotificationShown: false,
 
   sendMessage(type, key, value = null) {
     return new Promise((resolve, reject) => {
@@ -267,6 +268,15 @@ const ChromeStorageHelper = {
 
   async set(key, value) {
     return this.sendMessage("storage-set", key, value);
+  },
+
+  showReloadNotification() {
+    if (this.reloadNotificationShown) return;
+    this.reloadNotificationShown = true;
+
+    // コンソールにメッセージを表示
+    console.warn("%c[ChatHelper] 拡張機能が更新されました", "color: #ff9800; font-size: 14px; font-weight: bold;");
+    console.warn("%cページをリロードしてください（F5キーまたはCtrl+R）", "color: #ff9800; font-size: 12px;");
   }
 };
 
@@ -295,9 +305,12 @@ window.addEventListener("message", (event) => {
     if (pending) {
       ChromeStorageHelper.pendingRequests.delete(message.requestId);
       if (message.error) {
-        console.error("[ChatHelper] ストレージエラー:", message.error);
         if (message.error.includes("Extension context invalidated")) {
           console.warn("[ChatHelper] 拡張機能がリロードされました。ページをリロードしてください。");
+          // ユーザーにページリロードを促す通知を表示
+          ChromeStorageHelper.showReloadNotification();
+        } else {
+          console.error("[ChatHelper] ストレージエラー:", message.error);
         }
         pending.reject(new Error(message.error));
       } else {
@@ -315,6 +328,12 @@ window.addEventListener("message", (event) => {
       if (message.success) {
         pending.resolve(true);
       } else {
+        if (message.error && message.error.includes("Extension context invalidated")) {
+          console.warn("[ChatHelper] 拡張機能がリロードされました。ページをリロードしてください。");
+          ChromeStorageHelper.showReloadNotification();
+        } else {
+          console.error("[ChatHelper] ストレージ保存エラー:", message.error);
+        }
         pending.reject(new Error(message.error || "Storage set failed"));
       }
     }
@@ -330,6 +349,9 @@ const Storage = {
       return data || { channels: [], global: [] };
     } catch (e) {
       console.error("[ChatHelper] ストレージデータの読み込みエラー:", e);
+      if (e.message && e.message.includes("Extension context invalidated")) {
+        console.warn("[ChatHelper] 拡張機能のコンテキストが無効です。データの読み込みをスキップします。");
+      }
       return { channels: [], global: [] };
     }
   },
@@ -340,6 +362,9 @@ const Storage = {
       return true;
     } catch (e) {
       console.error("[ChatHelper] ストレージデータの保存エラー:", e);
+      if (e.message && e.message.includes("Extension context invalidated")) {
+        console.warn("[ChatHelper] 拡張機能のコンテキストが無効です。データの保存をスキップします。");
+      }
       return false;
     }
   },

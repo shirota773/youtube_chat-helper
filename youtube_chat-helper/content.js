@@ -6,6 +6,15 @@ const defaultSettings = {
     autoLoadStamps: true
 };
 
+// 拡張機能のコンテキストが有効かチェック
+function isExtensionContextValid() {
+    try {
+        return !!chrome.runtime?.id;
+    } catch (e) {
+        return false;
+    }
+}
+
 // 設定をページに注入（postMessageを使用）
 function injectSettings(settings) {
     window.postMessage({
@@ -33,25 +42,31 @@ function notifySettingsChange(settings) {
 }
 
 // 初期化
-chrome.storage.local.get(SETTINGS_KEY, (result) => {
-    const settings = { ...defaultSettings, ...result[SETTINGS_KEY] };
+if (!isExtensionContextValid()) {
+    console.warn("[Content] 拡張機能のコンテキストが無効です。ページをリロードしてください。");
+} else {
+    chrome.storage.local.get(SETTINGS_KEY, (result) => {
+        const settings = { ...defaultSettings, ...result[SETTINGS_KEY] };
 
-    // メインスクリプトを先に注入
-    injectScript("inject.js");
+        // メインスクリプトを先に注入
+        injectScript("inject.js");
 
-    // スクリプト読み込み後に設定を送信
-    setTimeout(() => {
-        injectSettings(settings);
-    }, 100);
-});
+        // スクリプト読み込み後に設定を送信
+        setTimeout(() => {
+            injectSettings(settings);
+        }, 100);
+    });
+}
 
 // 設定変更を監視
-chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === "local" && changes[SETTINGS_KEY]) {
-        const newSettings = { ...defaultSettings, ...changes[SETTINGS_KEY].newValue };
-        notifySettingsChange(newSettings);
-    }
-});
+if (isExtensionContextValid()) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === "local" && changes[SETTINGS_KEY]) {
+            const newSettings = { ...defaultSettings, ...changes[SETTINGS_KEY].newValue };
+            notifySettingsChange(newSettings);
+        }
+    });
+}
 
 // ストレージ用のメッセージリスナー（inject.jsからのメッセージを処理）
 window.addEventListener("message", (event) => {
@@ -65,6 +80,10 @@ window.addEventListener("message", (event) => {
 
     // 設定の保存
     if (message.type === "settings-save") {
+        if (!isExtensionContextValid()) {
+            console.warn("[Content] 拡張機能のコンテキストが無効です。設定を保存できません。");
+            return;
+        }
         const dataToSave = {};
         dataToSave[SETTINGS_KEY] = message.settings;
         chrome.storage.local.set(dataToSave);
@@ -73,6 +92,17 @@ window.addEventListener("message", (event) => {
 
     // ストレージGET
     if (message.type === "storage-get") {
+        if (!isExtensionContextValid()) {
+            window.postMessage({
+                source: "chat-helper-content",
+                type: "storage-get-response",
+                requestId: message.requestId,
+                data: null,
+                error: "Extension context invalidated. Please reload the page."
+            }, "*");
+            return;
+        }
+
         try {
             chrome.storage.local.get(message.key, (result) => {
                 if (chrome.runtime.lastError) {
@@ -108,6 +138,17 @@ window.addEventListener("message", (event) => {
 
     // ストレージSET
     if (message.type === "storage-set") {
+        if (!isExtensionContextValid()) {
+            window.postMessage({
+                source: "chat-helper-content",
+                type: "storage-set-response",
+                requestId: message.requestId,
+                success: false,
+                error: "Extension context invalidated. Please reload the page."
+            }, "*");
+            return;
+        }
+
         try {
             const dataToSave = {};
             dataToSave[message.key] = message.value;
