@@ -2059,6 +2059,7 @@ const ChatHelper = {
       StampLoader.loaded = false;
       UI.isSettingUpButtons = false;
       this.currentChatFrame = null;
+      // 古いiframeのフラグは無効なので、新しいiframeには設定されていない
     }
 
     // 現在のフレームを記録
@@ -2067,23 +2068,18 @@ const ChatHelper = {
       this.currentChatFrame = chatFrame;
     }
 
-    // 既に初期化済みかチェック
-    let hasButtons = false;
-    try {
-      if (chatFrame.contentDocument) {
-        hasButtons = chatFrame.contentDocument.querySelector("#chat-helper-buttons") !== null;
-      }
-    } catch (e) {
-      // クロスオリジンの場合は確認できない
-    }
-
-    if (this.initialized && hasButtons) {
-      return; // 既に初期化済みでボタンも存在
+    // iframe要素に直接フラグをチェック（最も信頼できる方法）
+    if (chatFrame.dataset.chatHelperInitialized === "true") {
+      console.log("[ChatHelper] このiframeは既に初期化済みです。スキップします。");
+      return; // 既に初期化済み
     }
 
     if (!chatFrame.dataset.chatHelperListenerAdded) {
       chatFrame.addEventListener("load", () => {
-        this.initialized = false; // リロード時にフラグをクリア
+        console.log("[ChatHelper] iframeがリロードされました。再初期化します。");
+        // リロード時にフラグをクリア
+        delete chatFrame.dataset.chatHelperInitialized;
+        this.initialized = false;
         StampLoader.loaded = false;
         UI.isSettingUpButtons = false;
         this.initializeFrame(chatFrame);
@@ -2093,6 +2089,7 @@ const ChatHelper = {
 
     try {
       if (chatFrame.contentDocument?.readyState === "complete") {
+        console.log("[ChatHelper] iframeの準備ができました。初期化を開始します。");
         this.initializeFrame(chatFrame);
       }
     } catch (e) {
@@ -2196,6 +2193,12 @@ const ChatHelper = {
 
       console.log("initializeFrame: StampLoader.autoLoadStamps を呼び出し");
       StampLoader.autoLoadStamps(iframe);
+
+      // iframe要素に初期化完了フラグを設定（DOM要素の場合のみ）
+      if (iframe.dataset) {
+        iframe.dataset.chatHelperInitialized = "true";
+        console.log("initializeFrame: iframe に初期化完了フラグを設定しました");
+      }
 
       console.log("initializeFrame: YouTube Chat Helper の初期化完了！");
       return true; // 成功を返す
