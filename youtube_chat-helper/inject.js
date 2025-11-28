@@ -664,7 +664,7 @@ const Storage = {
 const CCPPP = {
   enabled: true,
   emojiMap: new Map(),
-  observer: null,
+  pasteHandler: null,
 
   init(iframe) {
     this.enabled = Settings.get().ccpppEnabled;
@@ -677,7 +677,7 @@ const CCPPP = {
     }
 
     this.buildEmojiMap(iframe);
-    this.observeInput(iframe);
+    this.setupPasteListener(iframe);
   },
 
   buildEmojiMap(iframe) {
@@ -700,9 +700,9 @@ const CCPPP = {
     console.log(`CCPPP: ${this.emojiMap.size} 個の絵文字を検出`);
   },
 
-  observeInput(iframe) {
+  setupPasteListener(iframe) {
     if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping observeInput");
+      console.warn("CCPPP: iframe.contentDocument is null, skipping setupPasteListener");
       return;
     }
 
@@ -711,29 +711,65 @@ const CCPPP = {
       "yt-live-chat-text-input-field-renderer#input #input"
     );
 
-    if (!inputField) return;
+    if (!inputField) {
+      console.warn("CCPPP: 入力欄が見つかりません");
+      return;
+    }
 
-    if (this.observer) this.observer.disconnect();
+    // 既存のリスナーを削除
+    if (this.pasteHandler) {
+      inputField.removeEventListener("paste", this.pasteHandler);
+    }
 
-    this.observer = new MutationObserver(
-      Utils.debounce(() => this.processInput(iframe), 300)
-    );
+    // ペーストイベントを監視
+    this.pasteHandler = (event) => {
+      this.handlePaste(event, iframe);
+    };
 
-    this.observer.observe(inputField, {
-      childList: true,
-      characterData: true,
-      subtree: true
-    });
-
-    // 初回チェック
-    this.processInput(iframe);
+    inputField.addEventListener("paste", this.pasteHandler);
+    console.log("CCPPP: ペーストイベントリスナーを設定しました");
   },
 
-  processInput(iframe) {
+  handlePaste(event, iframe) {
     if (!this.enabled) return;
 
-    if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping processInput");
+    // クリップボードからテキストを取得
+    const pastedText = event.clipboardData?.getData("text");
+    if (!pastedText) return;
+
+    console.log("CCPPP: ペーストされたテキスト:", pastedText);
+
+    // :絵文字名: 形式を検出
+    const regex = /:([^:\s]+):/g;
+    const matches = [];
+    let match;
+
+    while ((match = regex.exec(pastedText)) !== null) {
+      const emojiName = match[1];
+      if (this.emojiMap.has(emojiName)) {
+        matches.push(emojiName);
+      }
+    }
+
+    if (matches.length > 0) {
+      console.log(`CCPPP: ${matches.length} 個のスタンプを検出しました:`, matches);
+
+      // デフォルトのペースト動作をキャンセル
+      event.preventDefault();
+
+      // スタンプを順番に挿入
+      this.insertEmojis(matches, pastedText, iframe);
+    }
+  },
+
+  insertEmojis(emojiNames, originalText, iframe) {
+    const categories = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "tp-yt-iron-pages #categories"
+    );
+
+    if (!categories) {
+      console.warn("CCPPP: カテゴリが見つかりません");
       return;
     }
 
@@ -742,92 +778,62 @@ const CCPPP = {
       "yt-live-chat-text-input-field-renderer#input #input"
     );
 
-    if (!inputField) return;
-
-    // テキストノードを検索（iframe内のdocumentを使用）
-    const textNodes = [];
-    const walker = iframe.contentDocument.createTreeWalker(
-      inputField,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-
-    let node;
-    while (node = walker.nextNode()) {
-      textNodes.push(node);
+    if (!inputField) {
+      console.warn("CCPPP: 入力欄が見つかりません");
+      return;
     }
 
-    // 各テキストノードで絵文字名を検索
-    textNodes.forEach(textNode => {
-      const text = textNode.textContent;
-      const regex = /:([^:\s]+):/g;
-      let match;
-      let lastIndex = 0;
-      const fragments = [];
-      let hasEmoji = false;
+    // テキストを解析して、スタンプとテキストを順番に挿入
+    const regex = /:([^:\s]+):/g;
+    let lastIndex = 0;
+    let match;
 
-      while ((match = regex.exec(text)) !== null) {
-        const emojiName = match[1];
-        if (this.emojiMap.has(emojiName)) {
-          hasEmoji = true;
-          // マッチ前のテキスト
-          if (match.index > lastIndex) {
-            fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex, match.index)));
-          }
-          // 絵文字ボタン
-          const btn = this.createEmojiButton(emojiName, iframe);
-          fragments.push(btn);
-          lastIndex = match.index + match[0].length;
+    while ((match = regex.exec(originalText)) !== null) {
+      const emojiName = match[1];
+
+      // マッチ前のテキストを挿入
+      if (match.index > lastIndex) {
+        const textBefore = originalText.slice(lastIndex, match.index);
+        if (inputField.insertText) {
+          inputField.insertText(textBefore);
+        } else {
+          // フォールバック: テキストノードを直接挿入
+          const textNode = iframe.contentDocument.createTextNode(textBefore);
+          inputField.appendChild(textNode);
         }
       }
 
-      if (hasEmoji) {
-        // 残りのテキスト
-        if (lastIndex < text.length) {
-          fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex)));
-        }
-        // ノードを置換
-        const parent = textNode.parentNode;
-        fragments.forEach(frag => parent.insertBefore(frag, textNode));
-        parent.removeChild(textNode);
-      }
-    });
-  },
-
-  createEmojiButton(emojiName, iframe) {
-    const btn = iframe.contentDocument.createElement("button");
-    btn.className = "ccppp-emoji-btn";
-    btn.textContent = `:${emojiName}:`;
-    btn.style.cssText = `
-            background: #ff9800;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 1px 4px;
-            margin: 0 2px;
-            cursor: pointer;
-            font-size: 11px;
-    `;
-
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const categories = Utils.safeQuerySelector(
-        iframe.contentDocument,
-        "tp-yt-iron-pages #categories"
-      );
-      if (categories) {
+      // スタンプを挿入（該当する場合）
+      if (this.emojiMap.has(emojiName)) {
         const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
         if (emojiBtn) {
+          console.log(`CCPPP: スタンプをクリック: ${emojiName}`);
           emojiBtn.click();
-          btn.remove();
+        }
+      } else {
+        // スタンプが見つからない場合は、元のテキストを挿入
+        const emojiText = `:${emojiName}:`;
+        if (inputField.insertText) {
+          inputField.insertText(emojiText);
+        } else {
+          const textNode = iframe.contentDocument.createTextNode(emojiText);
+          inputField.appendChild(textNode);
         }
       }
-    });
 
-    return btn;
+      lastIndex = match.index + match[0].length;
+    }
+
+    // 残りのテキストを挿入
+    if (lastIndex < originalText.length) {
+      const textAfter = originalText.slice(lastIndex);
+      if (inputField.insertText) {
+        inputField.insertText(textAfter);
+      } else {
+        const textNode = iframe.contentDocument.createTextNode(textAfter);
+        inputField.appendChild(textNode);
+      }
+    }
   },
 
   toggle(enabled) {
