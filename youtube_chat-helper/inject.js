@@ -882,8 +882,18 @@ const CCPPP = {
     console.log("CCPPP: トークン数:", tokens.length);
     console.log("CCPPP: トークン詳細:", tokens.map(t => `[${t.type}] "${t.value}"`).join(" → "));
 
-    const categories = Utils.safeQuerySelector(
+    const inputPanel = Utils.safeQuerySelector(
       iframe.contentDocument,
+      "#input-panel"
+    );
+
+    if (!inputPanel) {
+      console.error("CCPPP: input-panelが見つかりません");
+      return;
+    }
+
+    const categories = Utils.safeQuerySelector(
+      inputPanel,
       "tp-yt-iron-pages #categories"
     );
 
@@ -893,8 +903,8 @@ const CCPPP = {
     }
 
     const inputField = Utils.safeQuerySelector(
-      iframe.contentDocument,
-      "yt-live-chat-text-input-field-renderer#input #input"
+      inputPanel,
+      "yt-live-chat-text-input-field-renderer#input"
     );
 
     if (!inputField) {
@@ -903,18 +913,11 @@ const CCPPP = {
     }
 
     console.log("CCPPP: 入力欄の現在の内容:", inputField.textContent);
-    console.log("CCPPP: 入力欄のchildNodes数:", inputField.childNodes.length);
-
-    // 入力欄をクリア（デフォルトペーストの内容を削除）
-    while (inputField.firstChild) {
-      inputField.removeChild(inputField.firstChild);
-    }
-    console.log("%cCCPPP: 入力欄をクリアしました", "color: orange; font-weight: bold;");
 
     let insertCount = 0;
     let tokenIndex = 0;
 
-    // トークンを順番に処理
+    // トークンを順番に処理（insertTemplateと同じ方式）
     for (const token of tokens) {
       tokenIndex++;
       console.log(`%cCCPPP: [${tokenIndex}/${tokens.length}] 処理中: ${token.type} = "${token.value}"`, "color: purple;");
@@ -922,35 +925,32 @@ const CCPPP = {
       if (token.type === 'text') {
         console.log(`CCPPP: テキストを挿入: "${token.value}"`);
 
-        // テキストノードを直接挿入（insertTextは使わない）
-        const textNode = iframe.contentDocument.createTextNode(token.value);
-        inputField.appendChild(textNode);
+        // insertTextメソッドを使用（insertTemplateと同じ）
+        if (inputField.insertText) {
+          inputField.insertText(token.value);
+        } else {
+          console.warn("CCPPP: insertTextメソッドが利用できません");
+        }
 
         console.log(`CCPPP: テキスト挿入後の入力欄内容:`, inputField.textContent);
       } else if (token.type === 'stamp') {
         const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${token.value}"]`);
         if (emojiBtn) {
-          console.log(`%cCCPPP: スタンプを挿入: ${token.value}`, "color: blue; font-weight: bold;");
+          console.log(`%cCCPPP: スタンプをクリック: ${token.value}`, "color: blue; font-weight: bold;");
 
-          // スタンプボタンをクリックする代わりに、img要素を直接作成して挿入
-          const stampImg = emojiBtn.cloneNode(true);
-          inputField.appendChild(stampImg);
+          // insertTemplateと同じ方式でクリック
+          emojiBtn.click();
 
           insertCount++;
-          console.log(`CCPPP: スタンプ挿入完了後の入力欄内容:`, inputField.textContent);
-          console.log(`CCPPP: スタンプ挿入完了後のchildNodes数:`, inputField.childNodes.length);
+          console.log(`CCPPP: スタンプクリック完了後の入力欄内容:`, inputField.textContent);
         } else {
           console.warn(`CCPPP: スタンプボタンが見つかりません: ${token.value}`);
-          // スタンプが見つからない場合は、テキストとして挿入
-          const textNode = iframe.contentDocument.createTextNode(token.value);
-          inputField.appendChild(textNode);
         }
       }
     }
 
     console.log(`%cCCPPP: 挿入処理完了！合計 ${insertCount} 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
     console.log("CCPPP: 最終的な入力欄内容:", inputField.textContent);
-    console.log("CCPPP: 最終的なchildNodes数:", inputField.childNodes.length);
   },
 
   insertEmojis(emojiNames, originalText, iframe) {
