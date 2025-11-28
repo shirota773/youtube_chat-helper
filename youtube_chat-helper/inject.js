@@ -930,11 +930,15 @@ const CCPPP = {
       } else if (token.type === 'stamp') {
         const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${token.value}"]`);
         if (emojiBtn) {
-          console.log(`%cCCPPP: スタンプをクリック: ${token.value}`, "color: blue; font-weight: bold;");
-          emojiBtn.click();
+          console.log(`%cCCPPP: スタンプを挿入: ${token.value}`, "color: blue; font-weight: bold;");
+
+          // スタンプボタンをクリックする代わりに、img要素を直接作成して挿入
+          const stampImg = emojiBtn.cloneNode(true);
+          inputField.appendChild(stampImg);
+
           insertCount++;
-          console.log(`CCPPP: スタンプクリック完了後の入力欄内容:`, inputField.textContent);
-          console.log(`CCPPP: スタンプクリック完了後のchildNodes数:`, inputField.childNodes.length);
+          console.log(`CCPPP: スタンプ挿入完了後の入力欄内容:`, inputField.textContent);
+          console.log(`CCPPP: スタンプ挿入完了後のchildNodes数:`, inputField.childNodes.length);
         } else {
           console.warn(`CCPPP: スタンプボタンが見つかりません: ${token.value}`);
           // スタンプが見つからない場合は、テキストとして挿入
