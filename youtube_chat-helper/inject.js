@@ -741,25 +741,37 @@ const CCPPP = {
     }
     console.log("CCPPP: 入力欄を取得しました:", inputField);
 
-    // 既存のリスナーを削除（キャプチャフェーズとバブリングフェーズ両方）
-    if (this.pasteHandler) {
-      inputField.removeEventListener("paste", this.pasteHandler, true);
-      inputField.removeEventListener("paste", this.pasteHandler, false);
+    // 既にリスナーが設定されているかチェック
+    if (inputField._ccpppListenerAttached) {
+      console.log("CCPPP: このinputFieldには既にリスナーが設定されています。スキップします。");
+      return;
+    }
+
+    // 既存のリスナーを削除（念のため）
+    if (inputField._ccpppPasteHandler) {
+      inputField.removeEventListener("paste", inputField._ccpppPasteHandler, true);
+      inputField.removeEventListener("paste", inputField._ccpppPasteHandler, false);
       console.log("CCPPP: 既存のペーストリスナーを削除しました");
     }
 
-    // ペーストイベントを監視
-    this.pasteHandler = (event) => {
+    // ペーストイベントハンドラーを作成
+    const handler = (event) => {
       this.handlePaste(event, iframe);
     };
 
+    // inputFieldに直接ハンドラーを保存
+    inputField._ccpppPasteHandler = handler;
+    inputField._ccpppListenerAttached = true;
+
     // キャプチャフェーズで処理（他のリスナーより先に実行）
-    inputField.addEventListener("paste", this.pasteHandler, true);
+    inputField.addEventListener("paste", handler, true);
     console.log("%cCCPPP: ペーストイベントリスナーを設定しました（キャプチャフェーズ）！", "color: green; font-weight: bold;");
     console.log("CCPPP: この入力欄にCtrl+Vでペーストすると、スタンプ変換が実行されます");
   },
 
   handlePaste(event, iframe) {
+    console.log("%c━━━ CCPPP: handlePaste 開始 ━━━", "color: orange; font-weight: bold;");
+
     if (!this.enabled) {
       console.log("CCPPP: 機能が無効化されています");
       return;
@@ -767,7 +779,7 @@ const CCPPP = {
 
     // 処理中フラグをチェック（重複実行を防ぐ）
     if (this.isProcessing) {
-      console.warn("CCPPP: 既に処理中です。このイベントをスキップします。");
+      console.warn("%cCCPPP: 既に処理中です。このイベントをスキップします。", "color: red; font-weight: bold;");
       event.preventDefault();
       event.stopPropagation();
       return;
