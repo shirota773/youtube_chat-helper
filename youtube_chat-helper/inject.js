@@ -1976,22 +1976,34 @@ const ChatHelper = {
       contentWindow: window
     };
 
-    try {
-      UI.addStyles(pseudoIframe);
-      UI.setupChatButtons(pseudoIframe);
-      StampLoader.autoLoadStamps(pseudoIframe);
+    // 親ページから初期化されるのを少し待つ（all_frames:true のため、親ページと iframe 内の両方で実行される）
+    console.log("[ChatHelper] iframe内で実行中。親ページからの初期化を確認します...");
+    setTimeout(() => {
+      // 既にボタンが存在するかチェック（親ページから初期化済み）
+      const existingButtons = document.querySelector("#chat-helper-buttons");
+      if (existingButtons) {
+        console.log("[ChatHelper] 親ページから既に初期化されています。自己初期化をスキップします。");
+        return;
+      }
 
-      // 設定変更を監視
-      Settings.listenForChanges((newSettings) => {
-        CCPPP.enabled = newSettings.ccpppEnabled;
+      console.log("[ChatHelper] 親ページから初期化されていません。自己初期化を開始します。");
+      try {
+        UI.addStyles(pseudoIframe);
+        UI.setupChatButtons(pseudoIframe);
+        StampLoader.autoLoadStamps(pseudoIframe);
 
-        if (newSettings.ccpppEnabled) {
-          CCPPP.init(pseudoIframe);
-        }
-      });
-    } catch (e) {
-      console.error("[ChatHelper] 初期化エラー:", e);
-    }
+        // 設定変更を監視
+        Settings.listenForChanges((newSettings) => {
+          CCPPP.enabled = newSettings.ccpppEnabled;
+
+          if (newSettings.ccpppEnabled) {
+            CCPPP.init(pseudoIframe);
+          }
+        });
+      } catch (e) {
+        console.error("[ChatHelper] 初期化エラー:", e);
+      }
+    }, 1000); // 1秒待つ
   },
 
   observeDOM() {
