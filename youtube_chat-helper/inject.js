@@ -903,6 +903,13 @@ const CCPPP = {
     }
 
     console.log("CCPPP: 入力欄の現在の内容:", inputField.textContent);
+    console.log("CCPPP: 入力欄のchildNodes数:", inputField.childNodes.length);
+
+    // 入力欄をクリア（デフォルトペーストの内容を削除）
+    while (inputField.firstChild) {
+      inputField.removeChild(inputField.firstChild);
+    }
+    console.log("%cCCPPP: 入力欄をクリアしました", "color: orange; font-weight: bold;");
 
     let insertCount = 0;
     let tokenIndex = 0;
@@ -927,6 +934,7 @@ const CCPPP = {
           emojiBtn.click();
           insertCount++;
           console.log(`CCPPP: スタンプクリック完了後の入力欄内容:`, inputField.textContent);
+          console.log(`CCPPP: スタンプクリック完了後のchildNodes数:`, inputField.childNodes.length);
         } else {
           console.warn(`CCPPP: スタンプボタンが見つかりません: ${token.value}`);
           // スタンプが見つからない場合は、テキストとして挿入
@@ -938,6 +946,7 @@ const CCPPP = {
 
     console.log(`%cCCPPP: 挿入処理完了！合計 ${insertCount} 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
     console.log("CCPPP: 最終的な入力欄内容:", inputField.textContent);
+    console.log("CCPPP: 最終的なchildNodes数:", inputField.childNodes.length);
   },
 
   insertEmojis(emojiNames, originalText, iframe) {
