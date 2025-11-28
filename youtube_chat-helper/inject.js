@@ -775,8 +775,7 @@ const CCPPP = {
     console.log("CCPPP: 現在のemojiMapサイズ:", this.emojiMap.size);
 
     // スタンプ名を検出（コロンなし、YouTubeの仕様に対応）
-    // emojiMapに登録されているスタンプ名と一致するかチェック
-    const matches = [];
+    // テキストを左から順番に走査して、最長一致でスタンプを検出
     const stampNames = Array.from(this.emojiMap.keys());
 
     // 長い名前から順にソート（最長一致を優先）
@@ -784,29 +783,126 @@ const CCPPP = {
 
     console.log("CCPPP: 登録されているスタンプ名の例:", stampNames.slice(0, 10));
 
-    // ペーストされたテキストがスタンプ名のいずれかと一致するかチェック
-    for (const stampName of stampNames) {
-      // スタンプ名がテキスト全体または一部として含まれているかチェック
-      if (pastedText.includes(stampName)) {
-        console.log(`CCPPP: ✓ "${stampName}" を検出しました`);
-        if (!matches.includes(stampName)) {
-          matches.push(stampName);
+    // テキストを解析してスタンプの位置を特定
+    const tokens = []; // { type: 'text' | 'stamp', value: string, position: number }
+    let currentPos = 0;
+
+    while (currentPos < pastedText.length) {
+      let matched = false;
+
+      // 現在位置から最長一致するスタンプ名を探す
+      for (const stampName of stampNames) {
+        if (pastedText.substring(currentPos).startsWith(stampName)) {
+          console.log(`CCPPP: ✓ 位置${currentPos}で "${stampName}" を検出`);
+          tokens.push({ type: 'stamp', value: stampName, position: currentPos });
+          currentPos += stampName.length;
+          matched = true;
+          break;
+        }
+      }
+
+      // スタンプにマッチしなかった場合は、次の文字へ
+      if (!matched) {
+        // テキスト部分を収集
+        let textStart = currentPos;
+        currentPos++;
+
+        // 次のスタンプまたは終端まで進む
+        while (currentPos < pastedText.length) {
+          let foundStamp = false;
+          for (const stampName of stampNames) {
+            if (pastedText.substring(currentPos).startsWith(stampName)) {
+              foundStamp = true;
+              break;
+            }
+          }
+          if (foundStamp) break;
+          currentPos++;
+        }
+
+        const textValue = pastedText.substring(textStart, currentPos);
+        if (textValue) {
+          tokens.push({ type: 'text', value: textValue, position: textStart });
         }
       }
     }
 
-    if (matches.length > 0) {
-      console.log(`%cCCPPP: ${matches.length} 個のスタンプを検出しました`, "color: green; font-weight: bold;", matches);
+    console.log("CCPPP: 解析結果:", tokens);
 
-      // デフォルトのペースト動作をキャンセル
+    // スタンプが1つでも含まれている場合は、カスタム処理を実行
+    const stampTokens = tokens.filter(t => t.type === 'stamp');
+
+    if (stampTokens.length > 0) {
+      console.log(`%cCCPPP: ${stampTokens.length} 個のスタンプを検出しました`, "color: green; font-weight: bold;", stampTokens.map(t => t.value));
+
+      // デフォルトのペースト動作をキャンセル（最初に実行）
       event.preventDefault();
+      event.stopPropagation();
       console.log("CCPPP: デフォルトのペースト動作をキャンセルしました");
 
-      // スタンプを順番に挿入
-      this.insertEmojis(matches, pastedText, iframe);
+      // トークンに基づいてスタンプとテキストを挿入
+      this.insertTokens(tokens, iframe);
     } else {
       console.log("CCPPP: スタンプが見つからなかったため、通常のペーストを実行します");
     }
+  },
+
+  insertTokens(tokens, iframe) {
+    console.log("CCPPP: insertTokens を開始します");
+    console.log("CCPPP: トークン数:", tokens.length);
+
+    const categories = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "tp-yt-iron-pages #categories"
+    );
+
+    if (!categories) {
+      console.error("CCPPP: カテゴリが見つかりません");
+      return;
+    }
+
+    const inputField = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "yt-live-chat-text-input-field-renderer#input #input"
+    );
+
+    if (!inputField) {
+      console.error("CCPPP: 入力欄が見つかりません");
+      return;
+    }
+
+    let insertCount = 0;
+
+    // トークンを順番に処理
+    for (const token of tokens) {
+      if (token.type === 'text') {
+        console.log(`CCPPP: テキストを挿入: "${token.value}"`);
+        if (inputField.insertText) {
+          inputField.insertText(token.value);
+        } else {
+          const textNode = iframe.contentDocument.createTextNode(token.value);
+          inputField.appendChild(textNode);
+        }
+      } else if (token.type === 'stamp') {
+        const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${token.value}"]`);
+        if (emojiBtn) {
+          console.log(`%cCCPPP: スタンプをクリック: ${token.value}`, "color: blue; font-weight: bold;");
+          emojiBtn.click();
+          insertCount++;
+        } else {
+          console.warn(`CCPPP: スタンプボタンが見つかりません: ${token.value}`);
+          // スタンプが見つからない場合は、テキストとして挿入
+          if (inputField.insertText) {
+            inputField.insertText(token.value);
+          } else {
+            const textNode = iframe.contentDocument.createTextNode(token.value);
+            inputField.appendChild(textNode);
+          }
+        }
+      }
+    }
+
+    console.log(`%cCCPPP: 挿入処理完了！合計 ${insertCount} 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
   },
 
   insertEmojis(emojiNames, originalText, iframe) {
