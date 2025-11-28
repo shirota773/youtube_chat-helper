@@ -880,6 +880,7 @@ const CCPPP = {
   insertTokens(tokens, iframe) {
     console.log("CCPPP: insertTokens を開始します");
     console.log("CCPPP: トークン数:", tokens.length);
+    console.log("CCPPP: トークン詳細:", tokens.map(t => `[${t.type}] "${t.value}"`).join(" → "));
 
     const categories = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -901,38 +902,42 @@ const CCPPP = {
       return;
     }
 
+    console.log("CCPPP: 入力欄の現在の内容:", inputField.textContent);
+
     let insertCount = 0;
+    let tokenIndex = 0;
 
     // トークンを順番に処理
     for (const token of tokens) {
+      tokenIndex++;
+      console.log(`%cCCPPP: [${tokenIndex}/${tokens.length}] 処理中: ${token.type} = "${token.value}"`, "color: purple;");
+
       if (token.type === 'text') {
         console.log(`CCPPP: テキストを挿入: "${token.value}"`);
-        if (inputField.insertText) {
-          inputField.insertText(token.value);
-        } else {
-          const textNode = iframe.contentDocument.createTextNode(token.value);
-          inputField.appendChild(textNode);
-        }
+
+        // テキストノードを直接挿入（insertTextは使わない）
+        const textNode = iframe.contentDocument.createTextNode(token.value);
+        inputField.appendChild(textNode);
+
+        console.log(`CCPPP: テキスト挿入後の入力欄内容:`, inputField.textContent);
       } else if (token.type === 'stamp') {
         const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${token.value}"]`);
         if (emojiBtn) {
           console.log(`%cCCPPP: スタンプをクリック: ${token.value}`, "color: blue; font-weight: bold;");
           emojiBtn.click();
           insertCount++;
+          console.log(`CCPPP: スタンプクリック完了後の入力欄内容:`, inputField.textContent);
         } else {
           console.warn(`CCPPP: スタンプボタンが見つかりません: ${token.value}`);
           // スタンプが見つからない場合は、テキストとして挿入
-          if (inputField.insertText) {
-            inputField.insertText(token.value);
-          } else {
-            const textNode = iframe.contentDocument.createTextNode(token.value);
-            inputField.appendChild(textNode);
-          }
+          const textNode = iframe.contentDocument.createTextNode(token.value);
+          inputField.appendChild(textNode);
         }
       }
     }
 
     console.log(`%cCCPPP: 挿入処理完了！合計 ${insertCount} 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
+    console.log("CCPPP: 最終的な入力欄内容:", inputField.textContent);
   },
 
   insertEmojis(emojiNames, originalText, iframe) {
