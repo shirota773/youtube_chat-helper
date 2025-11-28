@@ -774,19 +774,24 @@ const CCPPP = {
     console.log("CCPPP: ペーストされたテキスト:", pastedText);
     console.log("CCPPP: 現在のemojiMapサイズ:", this.emojiMap.size);
 
-    // :絵文字名: 形式を検出
-    const regex = /:([^:\s]+):/g;
+    // スタンプ名を検出（コロンなし、YouTubeの仕様に対応）
+    // emojiMapに登録されているスタンプ名と一致するかチェック
     const matches = [];
-    let match;
+    const stampNames = Array.from(this.emojiMap.keys());
 
-    while ((match = regex.exec(pastedText)) !== null) {
-      const emojiName = match[1];
-      console.log(`CCPPP: :${emojiName}: を検出`);
-      if (this.emojiMap.has(emojiName)) {
-        console.log(`CCPPP: ✓ ${emojiName} はスタンプとして登録されています`);
-        matches.push(emojiName);
-      } else {
-        console.log(`CCPPP: ✗ ${emojiName} はスタンプとして登録されていません`);
+    // 長い名前から順にソート（最長一致を優先）
+    stampNames.sort((a, b) => b.length - a.length);
+
+    console.log("CCPPP: 登録されているスタンプ名の例:", stampNames.slice(0, 10));
+
+    // ペーストされたテキストがスタンプ名のいずれかと一致するかチェック
+    for (const stampName of stampNames) {
+      // スタンプ名がテキスト全体または一部として含まれているかチェック
+      if (pastedText.includes(stampName)) {
+        console.log(`CCPPP: ✓ "${stampName}" を検出しました`);
+        if (!matches.includes(stampName)) {
+          matches.push(stampName);
+        }
       }
     }
 
@@ -807,6 +812,7 @@ const CCPPP = {
   insertEmojis(emojiNames, originalText, iframe) {
     console.log("CCPPP: insertEmojis を開始します");
     console.log("CCPPP: 挿入対象のテキスト:", originalText);
+    console.log("CCPPP: 検出されたスタンプ名:", emojiNames);
 
     const categories = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -830,59 +836,84 @@ const CCPPP = {
     }
     console.log("CCPPP: 入力欄を取得しました");
 
-    // テキストを解析して、スタンプとテキストを順番に挿入
-    const regex = /:([^:\s]+):/g;
-    let lastIndex = 0;
-    let match;
+    // スタンプ名が1つだけで、テキスト全体と完全一致する場合
+    if (emojiNames.length === 1 && originalText === emojiNames[0]) {
+      const emojiName = emojiNames[0];
+      console.log(`CCPPP: テキスト全体がスタンプ名と一致: ${emojiName}`);
+
+      const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
+      if (emojiBtn) {
+        console.log(`%cCCPPP: スタンプをクリック: ${emojiName}`, "color: blue; font-weight: bold;");
+        emojiBtn.click();
+        console.log(`%cCCPPP: 挿入処理完了！1 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
+      } else {
+        console.warn(`CCPPP: スタンプボタンが見つかりません: ${emojiName}`);
+        // スタンプが見つからない場合は、元のテキストを挿入
+        if (inputField.insertText) {
+          inputField.insertText(originalText);
+        } else {
+          const textNode = iframe.contentDocument.createTextNode(originalText);
+          inputField.appendChild(textNode);
+        }
+      }
+      return;
+    }
+
+    // 複数のスタンプまたは混在テキストの場合
+    // スタンプ名でテキストを分割して処理
+    let remainingText = originalText;
     let insertCount = 0;
 
-    while ((match = regex.exec(originalText)) !== null) {
-      const emojiName = match[1];
+    // emojiNamesを出現順に処理するため、テキスト内の位置でソート
+    const stampPositions = [];
+    for (const stampName of emojiNames) {
+      const index = remainingText.indexOf(stampName);
+      if (index !== -1) {
+        stampPositions.push({ name: stampName, index: index });
+      }
+    }
+    stampPositions.sort((a, b) => a.index - b.index);
 
-      // マッチ前のテキストを挿入
-      if (match.index > lastIndex) {
-        const textBefore = originalText.slice(lastIndex, match.index);
+    console.log("CCPPP: スタンプの出現順:", stampPositions);
+
+    let lastIndex = 0;
+    for (const { name: emojiName, index } of stampPositions) {
+      // スタンプの前のテキストを挿入
+      if (index > lastIndex) {
+        const textBefore = remainingText.slice(lastIndex, index);
         console.log(`CCPPP: テキストを挿入: "${textBefore}"`);
         if (inputField.insertText) {
           inputField.insertText(textBefore);
-          console.log("CCPPP: insertText() を使用してテキストを挿入しました");
         } else {
-          // フォールバック: テキストノードを直接挿入
           const textNode = iframe.contentDocument.createTextNode(textBefore);
           inputField.appendChild(textNode);
-          console.log("CCPPP: appendChild() を使用してテキストを挿入しました");
         }
       }
 
-      // スタンプを挿入（該当する場合）
-      if (this.emojiMap.has(emojiName)) {
-        const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
-        if (emojiBtn) {
-          console.log(`%cCCPPP: スタンプをクリック: ${emojiName}`, "color: blue; font-weight: bold;");
-          emojiBtn.click();
-          insertCount++;
-          console.log(`CCPPP: スタンプクリック完了 (${insertCount}個目)`);
-        } else {
-          console.warn(`CCPPP: スタンプボタンが見つかりません: ${emojiName}`);
-        }
+      // スタンプを挿入
+      const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
+      if (emojiBtn) {
+        console.log(`%cCCPPP: スタンプをクリック: ${emojiName}`, "color: blue; font-weight: bold;");
+        emojiBtn.click();
+        insertCount++;
+        console.log(`CCPPP: スタンプクリック完了 (${insertCount}個目)`);
       } else {
+        console.warn(`CCPPP: スタンプボタンが見つかりません: ${emojiName}`);
         // スタンプが見つからない場合は、元のテキストを挿入
-        const emojiText = `:${emojiName}:`;
-        console.log(`CCPPP: スタンプが見つからないため、テキストとして挿入: ${emojiText}`);
         if (inputField.insertText) {
-          inputField.insertText(emojiText);
+          inputField.insertText(emojiName);
         } else {
-          const textNode = iframe.contentDocument.createTextNode(emojiText);
+          const textNode = iframe.contentDocument.createTextNode(emojiName);
           inputField.appendChild(textNode);
         }
       }
 
-      lastIndex = match.index + match[0].length;
+      lastIndex = index + emojiName.length;
     }
 
     // 残りのテキストを挿入
-    if (lastIndex < originalText.length) {
-      const textAfter = originalText.slice(lastIndex);
+    if (lastIndex < remainingText.length) {
+      const textAfter = remainingText.slice(lastIndex);
       console.log(`CCPPP: 残りのテキストを挿入: "${textAfter}"`);
       if (inputField.insertText) {
         inputField.insertText(textAfter);
