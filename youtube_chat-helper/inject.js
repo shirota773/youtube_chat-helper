@@ -1926,6 +1926,7 @@ const StampLoader = {
 const ChatHelper = {
   initialized: false,
   observer: null,
+  currentChatFrame: null, // 現在のチャットフレームを追跡
 
   init() {
     // iframe内で実行されているかチェック
@@ -2025,7 +2026,30 @@ const ChatHelper = {
   checkForChatFrameYouTube() {
     // YouTube用
     const chatFrame = document.querySelector("iframe#chatframe");
-    if (!chatFrame) return;
+    if (!chatFrame) {
+      // iframe が消えた場合、状態をリセット
+      if (this.currentChatFrame) {
+        this.currentChatFrame = null;
+        this.initialized = false;
+        StampLoader.loaded = false;
+        UI.isSettingUpButtons = false;
+      }
+      return;
+    }
+
+    // iframe が新しくなった場合（再生成された場合）
+    if (this.currentChatFrame && this.currentChatFrame !== chatFrame) {
+      console.log("[ChatHelper] チャットフレームが再生成されました。状態をリセットします。");
+      this.initialized = false;
+      StampLoader.loaded = false;
+      UI.isSettingUpButtons = false;
+      this.currentChatFrame = null;
+    }
+
+    // 現在のフレームを記録
+    if (!this.currentChatFrame) {
+      this.currentChatFrame = chatFrame;
+    }
 
     // 既に初期化済みかチェック
     let hasButtons = false;
@@ -2044,6 +2068,8 @@ const ChatHelper = {
     if (!chatFrame.dataset.chatHelperListenerAdded) {
       chatFrame.addEventListener("load", () => {
         this.initialized = false; // リロード時にフラグをクリア
+        StampLoader.loaded = false;
+        UI.isSettingUpButtons = false;
         this.initializeFrame(chatFrame);
       });
       chatFrame.dataset.chatHelperListenerAdded = "true";
