@@ -665,6 +665,7 @@ const CCPPP = {
   enabled: true,
   emojiMap: new Map(),
   pasteHandler: null,
+  isProcessing: false, // 処理中フラグ
 
   init(iframe) {
     console.log("CCPPP: 初期化を開始します");
@@ -740,9 +741,10 @@ const CCPPP = {
     }
     console.log("CCPPP: 入力欄を取得しました:", inputField);
 
-    // 既存のリスナーを削除
+    // 既存のリスナーを削除（キャプチャフェーズとバブリングフェーズ両方）
     if (this.pasteHandler) {
-      inputField.removeEventListener("paste", this.pasteHandler);
+      inputField.removeEventListener("paste", this.pasteHandler, true);
+      inputField.removeEventListener("paste", this.pasteHandler, false);
       console.log("CCPPP: 既存のペーストリスナーを削除しました");
     }
 
@@ -751,8 +753,9 @@ const CCPPP = {
       this.handlePaste(event, iframe);
     };
 
-    inputField.addEventListener("paste", this.pasteHandler);
-    console.log("%cCCPPP: ペーストイベントリスナーを設定しました！", "color: green; font-weight: bold;");
+    // キャプチャフェーズで処理（他のリスナーより先に実行）
+    inputField.addEventListener("paste", this.pasteHandler, true);
+    console.log("%cCCPPP: ペーストイベントリスナーを設定しました（キャプチャフェーズ）！", "color: green; font-weight: bold;");
     console.log("CCPPP: この入力欄にCtrl+Vでペーストすると、スタンプ変換が実行されます");
   },
 
@@ -762,88 +765,103 @@ const CCPPP = {
       return;
     }
 
-    console.log("CCPPP: ペーストイベントを検出しました");
-
-    // クリップボードからテキストを取得
-    const pastedText = event.clipboardData?.getData("text");
-    if (!pastedText) {
-      console.log("CCPPP: クリップボードにテキストがありません");
+    // 処理中フラグをチェック（重複実行を防ぐ）
+    if (this.isProcessing) {
+      console.warn("CCPPP: 既に処理中です。このイベントをスキップします。");
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
 
-    console.log("CCPPP: ペーストされたテキスト:", pastedText);
-    console.log("CCPPP: 現在のemojiMapサイズ:", this.emojiMap.size);
+    try {
+      this.isProcessing = true;
 
-    // スタンプ名を検出（コロンなし、YouTubeの仕様に対応）
-    // テキストを左から順番に走査して、最長一致でスタンプを検出
-    const stampNames = Array.from(this.emojiMap.keys());
+      console.log("CCPPP: ペーストイベントを検出しました");
 
-    // 長い名前から順にソート（最長一致を優先）
-    stampNames.sort((a, b) => b.length - a.length);
-
-    console.log("CCPPP: 登録されているスタンプ名の例:", stampNames.slice(0, 10));
-
-    // テキストを解析してスタンプの位置を特定
-    const tokens = []; // { type: 'text' | 'stamp', value: string, position: number }
-    let currentPos = 0;
-
-    while (currentPos < pastedText.length) {
-      let matched = false;
-
-      // 現在位置から最長一致するスタンプ名を探す
-      for (const stampName of stampNames) {
-        if (pastedText.substring(currentPos).startsWith(stampName)) {
-          console.log(`CCPPP: ✓ 位置${currentPos}で "${stampName}" を検出`);
-          tokens.push({ type: 'stamp', value: stampName, position: currentPos });
-          currentPos += stampName.length;
-          matched = true;
-          break;
-        }
+      // クリップボードからテキストを取得
+      const pastedText = event.clipboardData?.getData("text");
+      if (!pastedText) {
+        console.log("CCPPP: クリップボードにテキストがありません");
+        return;
       }
 
-      // スタンプにマッチしなかった場合は、次の文字へ
-      if (!matched) {
-        // テキスト部分を収集
-        let textStart = currentPos;
-        currentPos++;
+      console.log("CCPPP: ペーストされたテキスト:", pastedText);
+      console.log("CCPPP: 現在のemojiMapサイズ:", this.emojiMap.size);
 
-        // 次のスタンプまたは終端まで進む
-        while (currentPos < pastedText.length) {
-          let foundStamp = false;
-          for (const stampName of stampNames) {
-            if (pastedText.substring(currentPos).startsWith(stampName)) {
-              foundStamp = true;
-              break;
-            }
+      // スタンプ名を検出（コロンなし、YouTubeの仕様に対応）
+      // テキストを左から順番に走査して、最長一致でスタンプを検出
+      const stampNames = Array.from(this.emojiMap.keys());
+
+      // 長い名前から順にソート（最長一致を優先）
+      stampNames.sort((a, b) => b.length - a.length);
+
+      console.log("CCPPP: 登録されているスタンプ名の例:", stampNames.slice(0, 10));
+
+      // テキストを解析してスタンプの位置を特定
+      const tokens = []; // { type: 'text' | 'stamp', value: string, position: number }
+      let currentPos = 0;
+
+      while (currentPos < pastedText.length) {
+        let matched = false;
+
+        // 現在位置から最長一致するスタンプ名を探す
+        for (const stampName of stampNames) {
+          if (pastedText.substring(currentPos).startsWith(stampName)) {
+            console.log(`CCPPP: ✓ 位置${currentPos}で "${stampName}" を検出`);
+            tokens.push({ type: 'stamp', value: stampName, position: currentPos });
+            currentPos += stampName.length;
+            matched = true;
+            break;
           }
-          if (foundStamp) break;
-          currentPos++;
         }
 
-        const textValue = pastedText.substring(textStart, currentPos);
-        if (textValue) {
-          tokens.push({ type: 'text', value: textValue, position: textStart });
+        // スタンプにマッチしなかった場合は、次の文字へ
+        if (!matched) {
+          // テキスト部分を収集
+          let textStart = currentPos;
+          currentPos++;
+
+          // 次のスタンプまたは終端まで進む
+          while (currentPos < pastedText.length) {
+            let foundStamp = false;
+            for (const stampName of stampNames) {
+              if (pastedText.substring(currentPos).startsWith(stampName)) {
+                foundStamp = true;
+                break;
+              }
+            }
+            if (foundStamp) break;
+            currentPos++;
+          }
+
+          const textValue = pastedText.substring(textStart, currentPos);
+          if (textValue) {
+            tokens.push({ type: 'text', value: textValue, position: textStart });
+          }
         }
       }
-    }
 
-    console.log("CCPPP: 解析結果:", tokens);
+      console.log("CCPPP: 解析結果:", tokens);
 
-    // スタンプが1つでも含まれている場合は、カスタム処理を実行
-    const stampTokens = tokens.filter(t => t.type === 'stamp');
+      // スタンプが1つでも含まれている場合は、カスタム処理を実行
+      const stampTokens = tokens.filter(t => t.type === 'stamp');
 
-    if (stampTokens.length > 0) {
-      console.log(`%cCCPPP: ${stampTokens.length} 個のスタンプを検出しました`, "color: green; font-weight: bold;", stampTokens.map(t => t.value));
+      if (stampTokens.length > 0) {
+        console.log(`%cCCPPP: ${stampTokens.length} 個のスタンプを検出しました`, "color: green; font-weight: bold;", stampTokens.map(t => t.value));
 
-      // デフォルトのペースト動作をキャンセル（最初に実行）
-      event.preventDefault();
-      event.stopPropagation();
-      console.log("CCPPP: デフォルトのペースト動作をキャンセルしました");
+        // デフォルトのペースト動作をキャンセル（最初に実行）
+        event.preventDefault();
+        event.stopPropagation();
+        console.log("CCPPP: デフォルトのペースト動作をキャンセルしました");
 
-      // トークンに基づいてスタンプとテキストを挿入
-      this.insertTokens(tokens, iframe);
-    } else {
-      console.log("CCPPP: スタンプが見つからなかったため、通常のペーストを実行します");
+        // トークンに基づいてスタンプとテキストを挿入
+        this.insertTokens(tokens, iframe);
+      } else {
+        console.log("CCPPP: スタンプが見つからなかったため、通常のペーストを実行します");
+      }
+    } finally {
+      // 処理完了後、フラグをクリア
+      this.isProcessing = false;
     }
   },
 
