@@ -914,6 +914,7 @@ const UI = {
   async setupChatButtons(iframe) {
     // Guard against concurrent calls
     if (this.isSettingUpButtons) {
+      console.log("[ChatHelper] setupChatButtons: 既に実行中のためスキップ");
       return;
     }
 
@@ -923,6 +924,7 @@ const UI = {
 
       // iframe.contentDocument が null の場合は早期リターン
       if (!iframe.contentDocument) {
+        console.log("[ChatHelper] setupChatButtons: iframe.contentDocument is null");
         return;
       }
 
@@ -931,7 +933,10 @@ const UI = {
         iframe.contentDocument,
         "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
       );
-      if (!emojiButton) return;
+      if (!emojiButton) {
+        console.log("[ChatHelper] setupChatButtons: emojiButton が見つかりません");
+        return;
+      }
 
       emojiButton.click();
       emojiButton.click();
@@ -944,11 +949,17 @@ const UI = {
         iframe.contentDocument,
         "#chat-messages #input-panel #container > #top"
       );
-      if (!chatContainer) return;
+      if (!chatContainer) {
+        console.log("[ChatHelper] setupChatButtons: chatContainer が見つかりません");
+        return;
+      }
 
       // Remove ALL existing wrappers (in case there are multiple)
       const existingWrappers = Utils.safeQuerySelectorAll(iframe.contentDocument, "#chat-helper-buttons");
-      existingWrappers.forEach(wrapper => wrapper.remove());
+      if (existingWrappers.length > 0) {
+        console.log(`[ChatHelper] setupChatButtons: 既存のボタンを ${existingWrappers.length} 個削除します`);
+        existingWrappers.forEach(wrapper => wrapper.remove());
+      }
 
       const buttonWrapper = document.createElement("div");
       buttonWrapper.id = "chat-helper-buttons";
@@ -976,6 +987,7 @@ const UI = {
         if (data && data.length > 0) {
           const currentChannelInfo = Utils.getChannelInfo();
           Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
+            console.log("[ChatHelper] テンプレートを保存しました。ボタンを再構築します。");
             this.setupChatButtons(iframe);
           });
         }
@@ -983,12 +995,14 @@ const UI = {
       buttonWrapper.appendChild(saveButton);
 
       chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
+      console.log("[ChatHelper] setupChatButtons: ボタンを挿入しました");
 
       // ドラッグ＆ドロップを設定
       this.setupButtonDragAndDrop(iframe);
     } finally {
       // Always clear the guard flag
       this.isSettingUpButtons = false;
+      console.log("[ChatHelper] setupChatButtons: 完了（フラグをクリア）");
     }
   },
 
@@ -2029,6 +2043,7 @@ const ChatHelper = {
     if (!chatFrame) {
       // iframe が消えた場合、状態をリセット
       if (this.currentChatFrame) {
+        console.log("[ChatHelper] チャットフレームが消えました。状態をリセットします。");
         this.currentChatFrame = null;
         this.initialized = false;
         StampLoader.loaded = false;
@@ -2048,6 +2063,7 @@ const ChatHelper = {
 
     // 現在のフレームを記録
     if (!this.currentChatFrame) {
+      console.log("[ChatHelper] 新しいチャットフレームを検出しました。");
       this.currentChatFrame = chatFrame;
     }
 
