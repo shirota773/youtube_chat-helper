@@ -666,6 +666,8 @@ const CCPPP = {
   emojiMap: new Map(),
   pasteHandler: null,
   isProcessing: false, // 処理中フラグ
+  setupRetryCount: 0, // リトライ回数カウンター
+  maxSetupRetries: 5, // 最大リトライ回数
 
   init(iframe) {
     console.log("CCPPP: 初期化を開始します");
@@ -682,6 +684,9 @@ const CCPPP = {
       return;
     }
     console.log("CCPPP: iframe.contentDocument が有効です");
+
+    // リトライカウンターをリセット
+    this.setupRetryCount = 0;
 
     this.buildEmojiMap(iframe);
     this.setupPasteListener(iframe);
@@ -729,17 +734,50 @@ const CCPPP = {
       return;
     }
 
-    const inputField = Utils.safeQuerySelector(
-      iframe.contentDocument,
-      "yt-live-chat-text-input-field-renderer#input #input"
-    );
+    // 複数のセレクタを試す
+    const selectors = [
+      "yt-live-chat-text-input-field-renderer#input #input",
+      "yt-live-chat-text-input-field-renderer#input div[contenteditable]",
+      "#input-panel yt-live-chat-text-input-field-renderer#input #input",
+      "#input-panel div[contenteditable]"
+    ];
+
+    let inputField = null;
+    let usedSelector = null;
+
+    for (const selector of selectors) {
+      inputField = Utils.safeQuerySelector(iframe.contentDocument, selector);
+      if (inputField) {
+        usedSelector = selector;
+        console.log(`CCPPP: 入力欄を取得しました (セレクタ: ${selector}):`, inputField);
+        break;
+      }
+    }
 
     if (!inputField) {
       console.error("CCPPP: 入力欄が見つかりません");
-      console.log("CCPPP: セレクタ: yt-live-chat-text-input-field-renderer#input #input");
+      console.log("CCPPP: 試したセレクタ:", selectors);
+
+      // リトライ回数をチェック
+      if (this.setupRetryCount < this.maxSetupRetries) {
+        this.setupRetryCount++;
+        console.log(`CCPPP: リトライします... (${this.setupRetryCount}/${this.maxSetupRetries})`);
+
+        // 1秒後にリトライ
+        setTimeout(() => {
+          console.log("CCPPP: リトライ中...");
+          this.setupPasteListener(iframe);
+        }, 1000);
+      } else {
+        console.error(`CCPPP: 最大リトライ回数(${this.maxSetupRetries})に達しました。セットアップを中止します。`);
+        this.setupRetryCount = 0; // カウンターをリセット
+      }
       return;
     }
     console.log("CCPPP: 入力欄を取得しました:", inputField);
+
+    // 成功したのでリトライカウンターをリセット
+    this.setupRetryCount = 0;
 
     // 既にリスナーが設定されているかチェック
     if (inputField._ccpppListenerAttached) {
