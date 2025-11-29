@@ -752,6 +752,13 @@ const CCPPP = {
 
   setupPasteListener(iframe) {
     console.log("CCPPP: ペーストリスナーのセットアップを開始します");
+
+    // iframeとcontentDocumentの有効性をチェック
+    if (!iframe) {
+      console.warn("CCPPP: iframe is null or undefined, skipping setupPasteListener");
+      return;
+    }
+
     if (!iframe.contentDocument) {
       console.warn("CCPPP: iframe.contentDocument is null, skipping setupPasteListener");
       return;
@@ -786,10 +793,16 @@ const CCPPP = {
         this.setupRetryCount++;
         console.log(`CCPPP: リトライします... (${this.setupRetryCount}/${this.maxSetupRetries})`);
 
-        // 1秒後にリトライ
+        // 1秒後にリトライ（iframeの有効性を再確認）
         setTimeout(() => {
           console.log("CCPPP: リトライ中...");
-          this.setupPasteListener(iframe);
+          // iframeがまだ有効かチェック
+          if (iframe && iframe.contentDocument) {
+            this.setupPasteListener(iframe);
+          } else {
+            console.warn("CCPPP: リトライ時にiframeが無効になっています");
+            this.setupRetryCount = 0; // カウンターをリセット
+          }
         }, 1000);
       } else {
         console.error(`CCPPP: 最大リトライ回数(${this.maxSetupRetries})に達しました。セットアップを中止します。`);
