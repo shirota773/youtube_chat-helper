@@ -310,35 +310,58 @@ const ChromeStorageHelper = {
       animation: slideDown 0.3s ease-out;
     `;
 
-    banner.innerHTML = `
-      <div style="max-width: 800px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
-        <span style="font-size: 20px;">⚠️</span>
-        <span style="font-size: 16px; font-weight: bold;">YouTube Chat Helper が更新されました</span>
-        <span style="font-size: 14px;">ページをリロードしてください</span>
-        <button id="chat-helper-reload-btn" style="
-          background: white;
-          color: #ff9800;
-          border: none;
-          padding: 8px 20px;
-          border-radius: 20px;
-          font-weight: bold;
-          cursor: pointer;
-          font-size: 14px;
-          transition: transform 0.2s;
-        ">今すぐリロード (F5)</button>
-        <button id="chat-helper-dismiss-btn" style="
-          background: transparent;
-          color: white;
-          border: 2px solid white;
-          padding: 6px 16px;
-          border-radius: 20px;
-          font-weight: bold;
-          cursor: pointer;
-          font-size: 13px;
-          transition: background 0.2s;
-        ">後で</button>
-      </div>
+    // DOM APIを使用してバナーコンテンツを構築（Trusted Types対応）
+    const container = document.createElement("div");
+    container.style.cssText = "max-width: 800px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;";
+
+    const icon = document.createElement("span");
+    icon.style.fontSize = "20px";
+    icon.textContent = "⚠️";
+
+    const title = document.createElement("span");
+    title.style.cssText = "font-size: 16px; font-weight: bold;";
+    title.textContent = "YouTube Chat Helper が更新されました";
+
+    const message = document.createElement("span");
+    message.style.fontSize = "14px";
+    message.textContent = "ページをリロードしてください";
+
+    const reloadBtn = document.createElement("button");
+    reloadBtn.id = "chat-helper-reload-btn";
+    reloadBtn.style.cssText = `
+      background: white;
+      color: #ff9800;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 14px;
+      transition: transform 0.2s;
     `;
+    reloadBtn.textContent = "今すぐリロード (F5)";
+
+    const dismissBtn = document.createElement("button");
+    dismissBtn.id = "chat-helper-dismiss-btn";
+    dismissBtn.style.cssText = `
+      background: transparent;
+      color: white;
+      border: 2px solid white;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+    `;
+    dismissBtn.textContent = "後で";
+
+    container.appendChild(icon);
+    container.appendChild(title);
+    container.appendChild(message);
+    container.appendChild(reloadBtn);
+    container.appendChild(dismissBtn);
+    banner.appendChild(container);
 
     // アニメーションのスタイルを追加
     const style = document.createElement("style");
@@ -1381,6 +1404,12 @@ const UI = {
 
   // 別名入力ダイアログを表示
   showAliasInputDialog(event, template, channelName, index, iframe) {
+    // テンプレートが存在しない場合は処理を中止
+    if (!template) {
+      console.error("CCPPP: テンプレートが見つかりません");
+      return;
+    }
+
     // 既存のダイアログを削除
     const existingDialog = iframe.contentDocument.querySelector("#chat-helper-alias-dialog");
     if (existingDialog) existingDialog.remove();
@@ -1419,17 +1448,19 @@ const UI = {
     `;
 
     // 元のコンテンツを表示（スタンプ含む）
-    template.content.forEach(item => {
-      if (typeof item === "string") {
-        inputField.appendChild(iframe.contentDocument.createTextNode(item));
-      } else if (typeof item === "object" && item.src) {
-        const img = iframe.contentDocument.createElement("img");
-        img.src = item.src;
-        img.alt = item.alt || "";
-        img.style.cssText = "height: 18px; width: 18px; vertical-align: middle;";
-        inputField.appendChild(img);
-      }
-    });
+    if (template && template.content) {
+      template.content.forEach(item => {
+        if (typeof item === "string") {
+          inputField.appendChild(iframe.contentDocument.createTextNode(item));
+        } else if (typeof item === "object" && item.src) {
+          const img = iframe.contentDocument.createElement("img");
+          img.src = item.src;
+          img.alt = item.alt || "";
+          img.style.cssText = "height: 18px; width: 18px; vertical-align: middle;";
+          inputField.appendChild(img);
+        }
+      });
+    }
 
     dialog.appendChild(inputField);
 
@@ -1573,17 +1604,19 @@ const UI = {
       originalItem.appendChild(label);
 
       // 元のコンテンツを表示（スタンプ絵文字含む）
-      template.content.forEach(item => {
-        if (typeof item === "string") {
-          originalItem.appendChild(document.createTextNode(item));
-        } else if (typeof item === "object" && item.src) {
-          const img = document.createElement("img");
-          img.src = item.src;
-          img.alt = item.alt || "";
-          img.style.cssText = "height: 16px; width: 16px; vertical-align: middle;";
-          originalItem.appendChild(img);
-        }
-      });
+      if (template && template.content) {
+        template.content.forEach(item => {
+          if (typeof item === "string") {
+            originalItem.appendChild(document.createTextNode(item));
+          } else if (typeof item === "object" && item.src) {
+            const img = document.createElement("img");
+            img.src = item.src;
+            img.alt = item.alt || "";
+            img.style.cssText = "height: 16px; width: 16px; vertical-align: middle;";
+            originalItem.appendChild(img);
+          }
+        });
+      }
 
       menu.appendChild(originalItem);
     }
