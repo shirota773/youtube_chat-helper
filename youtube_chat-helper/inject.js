@@ -1990,12 +1990,18 @@ const UI = {
 
   addStyles(iframe) {
     // iframe.contentDocument が null の場合は早期リターン（クロスオリジンまたは未ロードの場合）
-    if (!iframe.contentDocument) {
-      console.warn("iframe.contentDocument is null, skipping addStyles");
+    if (!iframe || !iframe.contentDocument) {
+      console.warn("iframe または iframe.contentDocument is null, skipping addStyles");
       return;
     }
 
     const styleId = "chat-helper-styles";
+    // 再度チェック（非同期処理の間に無効になる可能性があるため）
+    if (!iframe.contentDocument) {
+      console.warn("iframe.contentDocument became null, skipping addStyles");
+      return;
+    }
+
     if (iframe.contentDocument.querySelector(`#${styleId}`)) return;
 
     const styleTag = document.createElement("style");
@@ -2073,6 +2079,12 @@ const UI = {
                 vertical-align: middle;
             }
     `;
+
+    // 最終チェック: head にアクセスする前に contentDocument が有効か確認
+    if (!iframe.contentDocument || !iframe.contentDocument.head) {
+      console.warn("iframe.contentDocument または head が無効です, skipping appendChild");
+      return;
+    }
 
     iframe.contentDocument.head.appendChild(styleTag);
   },
