@@ -988,6 +988,12 @@ const CCPPP = {
     console.log("CCPPP: トークン数:", tokens.length);
     console.log("CCPPP: トークン詳細:", tokens.map(t => `[${t.type}] "${t.value}"`).join(" → "));
 
+    // iframe.contentDocument の有効性をチェック
+    if (!iframe || !iframe.contentDocument) {
+      console.error("CCPPP: iframe または iframe.contentDocument が無効です");
+      return;
+    }
+
     const inputPanel = Utils.safeQuerySelector(
       iframe.contentDocument,
       "#input-panel"
@@ -1063,6 +1069,12 @@ const CCPPP = {
     console.log("CCPPP: insertEmojis を開始します");
     console.log("CCPPP: 挿入対象のテキスト:", originalText);
     console.log("CCPPP: 検出されたスタンプ名:", emojiNames);
+
+    // iframe.contentDocument の有効性をチェック
+    if (!iframe || !iframe.contentDocument) {
+      console.error("CCPPP: iframe または iframe.contentDocument が無効です");
+      return;
+    }
 
     const categories = Utils.safeQuerySelector(
       iframe.contentDocument,
