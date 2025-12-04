@@ -686,10 +686,8 @@ const Storage = {
 // CCPPP機能（絵文字自動変換）
 const CCPPP = {
   enabled: true,
-  emojiMap: new Map(),
-  pasteHandler: null,
+  iframeData: new Map(), // iframe ごとのデータを管理
   isProcessing: false, // 処理中フラグ
-  setupRetryCount: 0, // リトライ回数カウンター
   maxSetupRetries: 5, // 最大リトライ回数
 
   init(iframe) {
@@ -708,8 +706,13 @@ const CCPPP = {
     }
     console.log("CCPPP: iframe.contentDocument が有効です");
 
-    // リトライカウンターをリセット
-    this.setupRetryCount = 0;
+    // このiframe用のデータを初期化
+    if (!this.iframeData.has(iframe)) {
+      this.iframeData.set(iframe, {
+        emojiMap: new Map(),
+        setupRetryCount: 0
+      });
+    }
 
     this.buildEmojiMap(iframe);
     this.setupPasteListener(iframe);
@@ -723,19 +726,36 @@ const CCPPP = {
       return;
     }
 
+    // iframeData が存在しない場合は初期化
+    if (!this.iframeData.has(iframe)) {
+      console.log("CCPPP: iframe データを初期化します");
+      this.iframeData.set(iframe, {
+        emojiMap: new Map(),
+        setupRetryCount: 0
+      });
+    }
+
+    // より広範なセレクタを使用してすべてのタブのスタンプを取得
+    // メンバーシップスタンプを含むすべてのスタンプを取得
     const emojis = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
-      "tp-yt-iron-pages #categories img[alt]"
+      "tp-yt-iron-pages img[alt], yt-live-chat-emoji-picker-renderer img[alt]"
     );
 
     console.log(`CCPPP: ${emojis.length} 個のスタンプ要素を見つけました`);
 
+    const data = this.iframeData.get(iframe);
+    if (!data) {
+      console.warn("CCPPP: iframe データが見つかりません（初期化後）");
+      return;
+    }
+
     // 既存のマップをクリア
-    this.emojiMap.clear();
+    data.emojiMap.clear();
 
     emojis.forEach((emoji, index) => {
       if (emoji.alt) {
-        this.emojiMap.set(emoji.alt, emoji.src);
+        data.emojiMap.set(emoji.alt, emoji.src);
         if (index < 5) {
           // 最初の5個だけログに出力
           console.log(`CCPPP: スタンプ登録: ${emoji.alt}`);
@@ -743,10 +763,10 @@ const CCPPP = {
       }
     });
 
-    console.log(`%cCCPPP: ${this.emojiMap.size} 個のスタンプをマップに登録しました`, "color: green; font-weight: bold;");
+    console.log(`%cCCPPP: ${data.emojiMap.size} 個のスタンプをマップに登録しました`, "color: green; font-weight: bold;");
 
     // 登録されたスタンプ名の一部を表示（デバッグ用）
-    const sampleNames = Array.from(this.emojiMap.keys()).slice(0, 10);
+    const sampleNames = Array.from(data.emojiMap.keys()).slice(0, 10);
     console.log("CCPPP: 登録されたスタンプ名の例:", sampleNames);
   },
 
@@ -761,6 +781,12 @@ const CCPPP = {
 
     if (!iframe.contentDocument) {
       console.warn("CCPPP: iframe.contentDocument is null, skipping setupPasteListener");
+      return;
+    }
+
+    const data = this.iframeData.get(iframe);
+    if (!data) {
+      console.warn("CCPPP: iframe データが見つかりません");
       return;
     }
 
@@ -789,9 +815,9 @@ const CCPPP = {
       console.log("CCPPP: 試したセレクタ:", selectors);
 
       // リトライ回数をチェック
-      if (this.setupRetryCount < this.maxSetupRetries) {
-        this.setupRetryCount++;
-        console.log(`CCPPP: リトライします... (${this.setupRetryCount}/${this.maxSetupRetries})`);
+      if (data.setupRetryCount < this.maxSetupRetries) {
+        data.setupRetryCount++;
+        console.log(`CCPPP: リトライします... (${data.setupRetryCount}/${this.maxSetupRetries})`);
 
         // 1秒後にリトライ（iframeの有効性を再確認）
         setTimeout(() => {
@@ -801,19 +827,19 @@ const CCPPP = {
             this.setupPasteListener(iframe);
           } else {
             console.warn("CCPPP: リトライ時にiframeが無効になっています");
-            this.setupRetryCount = 0; // カウンターをリセット
+            data.setupRetryCount = 0; // カウンターをリセット
           }
         }, 1000);
       } else {
         console.error(`CCPPP: 最大リトライ回数(${this.maxSetupRetries})に達しました。セットアップを中止します。`);
-        this.setupRetryCount = 0; // カウンターをリセット
+        data.setupRetryCount = 0; // カウンターをリセット
       }
       return;
     }
     console.log("CCPPP: 入力欄を取得しました:", inputField);
 
     // 成功したのでリトライカウンターをリセット
-    this.setupRetryCount = 0;
+    data.setupRetryCount = 0;
 
     // 既にリスナーが設定されているかチェック
     if (inputField._ccpppListenerAttached) {
@@ -859,6 +885,12 @@ const CCPPP = {
       return;
     }
 
+    const data = this.iframeData.get(iframe);
+    if (!data || !data.emojiMap) {
+      console.warn("CCPPP: iframe データまたは emojiMap が見つかりません");
+      return;
+    }
+
     try {
       this.isProcessing = true;
 
@@ -872,11 +904,11 @@ const CCPPP = {
       }
 
       console.log("CCPPP: ペーストされたテキスト:", pastedText);
-      console.log("CCPPP: 現在のemojiMapサイズ:", this.emojiMap.size);
+      console.log("CCPPP: 現在のemojiMapサイズ:", data.emojiMap.size);
 
       // スタンプ名を検出（コロンなし、YouTubeの仕様に対応）
       // テキストを左から順番に走査して、最長一致でスタンプを検出
-      const stampNames = Array.from(this.emojiMap.keys());
+      const stampNames = Array.from(data.emojiMap.keys());
 
       // 長い名前から順にソート（最長一致を優先）
       stampNames.sort((a, b) => b.length - a.length);
@@ -1255,6 +1287,9 @@ const UI = {
       emojiButton.click();
       emojiButton.click();
 
+      // スタンプピッカーが開いてスタンプが読み込まれるまで待つ
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const chatContainer = Utils.safeQuerySelector(
         iframe.contentDocument,
         "#chat-messages #input-panel #container"
@@ -1313,6 +1348,13 @@ const UI = {
 
       // ドラッグ＆ドロップを設定
       this.setupButtonDragAndDrop(iframe);
+
+      // スタンプが追加された後、CCPPPのemojiMapを再構築
+      if (CCPPP.enabled) {
+        console.log("[ChatHelper] setupChatButtons: CCPPPのemojiMapを再構築します");
+        await new Promise(resolve => setTimeout(resolve, 500)); // スタンプが完全に読み込まれるまで待つ
+        CCPPP.buildEmojiMap(iframe);
+      }
     } finally {
       // Always clear the guard flag
       this.isSettingUpButtons = false;
@@ -2307,6 +2349,14 @@ const ChatHelper = {
       const existingButtons = document.querySelector("#chat-helper-buttons");
       if (existingButtons) {
         console.log("[ChatHelper] 親ページから既に初期化されています。自己初期化をスキップします。");
+        // ただし、CCPPPが未初期化の場合は初期化する
+        if (CCPPP.enabled && !CCPPP.iframeData.has(pseudoIframe)) {
+          console.log("[ChatHelper] CCPPPを初期化します（iframe内）");
+          // スタンプが読み込まれるまで待つ
+          setTimeout(() => {
+            CCPPP.init(pseudoIframe);
+          }, 1500);
+        }
         return;
       }
 
