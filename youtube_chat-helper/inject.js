@@ -1250,16 +1250,50 @@ const UI = {
       return null;
     }
 
+    console.log("[ChatHelper] readChatInput: 入力欄の内容を読み取ります");
+    console.log("[ChatHelper] readChatInput: childNodes の数:", inputElement.childNodes.length);
+
     const inputData = [];
-    inputElement.childNodes.forEach(node => {
+    inputElement.childNodes.forEach((node, index) => {
+      console.log(`[ChatHelper] readChatInput: ノード ${index}:`, {
+        nodeType: node.nodeType,
+        nodeName: node.nodeName,
+        alt: node.alt,
+        src: node.src,
+        textContent: node.textContent?.substring(0, 50)
+      });
+
       if (node.nodeType === 3) {
+        // テキストノード
         const text = node.textContent.trim();
-        if (text) inputData.push(text);
+        if (text) {
+          console.log(`[ChatHelper] readChatInput: テキスト追加: "${text}"`);
+          inputData.push(text);
+        }
       } else if (node.nodeType === 1 && node.alt) {
+        // エレメントノードで alt 属性を持つもの（スタンプ）
+        console.log(`[ChatHelper] readChatInput: スタンプ追加: alt="${node.alt}", src="${node.src}"`);
         inputData.push({ alt: node.alt, src: node.src });
+      } else if (node.nodeType === 1) {
+        // alt 属性を持たないエレメントノード - 内部を調査
+        console.log(`[ChatHelper] readChatInput: alt なしのエレメント:`, node.nodeName);
+        // img タグを探す
+        if (node.nodeName === 'IMG') {
+          console.log(`[ChatHelper] readChatInput: IMG タグだが alt がない:`, node);
+        }
+        // 子要素に img があるか確認
+        const imgs = node.querySelectorAll ? node.querySelectorAll('img[alt]') : [];
+        if (imgs.length > 0) {
+          console.log(`[ChatHelper] readChatInput: 子要素に ${imgs.length} 個の img を発見`);
+          imgs.forEach(img => {
+            console.log(`[ChatHelper] readChatInput: 子要素のスタンプ追加: alt="${img.alt}", src="${img.src}"`);
+            inputData.push({ alt: img.alt, src: img.src });
+          });
+        }
       }
     });
 
+    console.log("[ChatHelper] readChatInput: 読み取り結果:", inputData);
     return inputData;
   },
 
