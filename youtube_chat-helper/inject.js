@@ -736,14 +736,34 @@ const CCPPP = {
       });
     }
 
-    // より広範なセレクタを使用してすべてのタブのスタンプを取得
-    // メンバーシップスタンプを含むすべてのスタンプを取得
-    const emojis = Utils.safeQuerySelectorAll(
+    // すべてのタブをクリックしてスタンプをロード（メンバーシップスタンプを含む）
+    const categoryButtons = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
-      "tp-yt-iron-pages img[alt], yt-live-chat-emoji-picker-renderer img[alt]"
+      "yt-live-chat-emoji-picker-category-buttons button, #picker-tabs button"
     );
 
-    console.log(`CCPPP: ${emojis.length} 個のスタンプ要素を見つけました`);
+    if (categoryButtons.length > 0) {
+      console.log(`CCPPP: ${categoryButtons.length} 個のカテゴリタブを検出しました`);
+      // 各タブをクリックしてスタンプをロード
+      categoryButtons.forEach((button, index) => {
+        setTimeout(() => {
+          console.log(`CCPPP: タブ ${index + 1}/${categoryButtons.length} をクリック`);
+          button.click();
+        }, index * 100); // 各クリックの間に100ms待つ
+      });
+
+      // すべてのタブをクリックした後、スタンプを収集
+      setTimeout(() => {
+        this.collectEmojisFromDOM(iframe);
+      }, categoryButtons.length * 100 + 500);
+    } else {
+      console.log("CCPPP: カテゴリタブが見つかりませんでした。直接スタンプを収集します");
+      this.collectEmojisFromDOM(iframe);
+    }
+  },
+
+  collectEmojisFromDOM(iframe) {
+    console.log("CCPPP: DOMからスタンプを収集します");
 
     const data = this.iframeData.get(iframe);
     if (!data) {
@@ -751,14 +771,23 @@ const CCPPP = {
       return;
     }
 
+    // より広範なセレクタを使用してすべてのタブのスタンプを取得
+    // メンバーシップスタンプを含むすべてのスタンプを取得
+    const emojis = Utils.safeQuerySelectorAll(
+      iframe.contentDocument,
+      "tp-yt-iron-pages img[alt], yt-live-chat-emoji-picker-renderer img[alt], #picker img[alt]"
+    );
+
+    console.log(`CCPPP: ${emojis.length} 個のスタンプ要素を見つけました`);
+
     // 既存のマップをクリア
     data.emojiMap.clear();
 
     emojis.forEach((emoji, index) => {
       if (emoji.alt) {
         data.emojiMap.set(emoji.alt, emoji.src);
-        if (index < 5) {
-          // 最初の5個だけログに出力
+        if (index < 10) {
+          // 最初の10個だけログに出力
           console.log(`CCPPP: スタンプ登録: ${emoji.alt}`);
         }
       }
@@ -1312,6 +1341,23 @@ const UI = {
 
       // スタンプピッカーが開いてスタンプが読み込まれるまで待つ
       await new Promise(resolve => setTimeout(resolve, 500));
+
+      // すべてのカテゴリタブをクリックしてメンバーシップスタンプを含むすべてのスタンプをロード
+      const categoryButtons = Utils.safeQuerySelectorAll(
+        iframe.contentDocument,
+        "yt-live-chat-emoji-picker-category-buttons button, #picker-tabs button"
+      );
+
+      if (categoryButtons.length > 0) {
+        console.log(`[ChatHelper] setupChatButtons: ${categoryButtons.length} 個のカテゴリタブをクリックします`);
+        for (let i = 0; i < categoryButtons.length; i++) {
+          categoryButtons[i].click();
+          await new Promise(resolve => setTimeout(resolve, 100)); // 各クリックの間に100ms待つ
+        }
+        // すべてのタブをクリックした後、少し待つ
+        await new Promise(resolve => setTimeout(resolve, 300));
+        console.log("[ChatHelper] setupChatButtons: すべてのカテゴリタブをクリックしました");
+      }
 
       const chatContainer = Utils.safeQuerySelector(
         iframe.contentDocument,
