@@ -29,6 +29,8 @@ const Utils = {
     const isInIframe = window.self !== window.top;
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
+    console.log("[ChatHelper] getChannelInfo: isInIframe =", isInIframe, "isYouTubeChatIframe =", isYouTubeChatIframe);
+
     if (isInIframe && isYouTubeChatIframe) {
       // 方法1: チャンネル名の要素から取得
       let channelElement = this.safeQuerySelector(
@@ -38,43 +40,56 @@ const Utils = {
         "#author-name a"
       );
 
+      console.log("[ChatHelper] getChannelInfo: 方法1 - channelElement =", channelElement);
+
       if (channelElement) {
-        return {
+        const result = {
           name: channelElement.innerText.trim(),
           href: channelElement.href
         };
+        console.log("[ChatHelper] getChannelInfo: 方法1成功 -", result);
+        return result;
       }
 
       // 方法2: URLから動画IDを取得してチャンネル識別
       const urlParams = new URLSearchParams(window.location.search);
       const videoId = urlParams.get('v');
 
+      console.log("[ChatHelper] getChannelInfo: 方法2 - videoId =", videoId);
+
       if (videoId) {
-        return {
+        const result = {
           name: `Video_${videoId}`,
           href: `https://www.youtube.com/watch?v=${videoId}`
         };
+        console.log("[ChatHelper] getChannelInfo: 方法2成功 -", result);
+        return result;
       }
 
       // 方法3: 親URLを参照（Holodex対応）
       try {
         const parentUrl = document.referrer;
+        console.log("[ChatHelper] getChannelInfo: 方法3 - parentUrl =", parentUrl);
 
         if (parentUrl && parentUrl.includes("holodex.net")) {
           // Holodexの場合、リファラーURLから情報を抽出
           const holodexMatch = parentUrl.match(/holodex\.net\/watch\/([^/?]+)/);
           if (holodexMatch) {
             const holodexVideoId = holodexMatch[1];
-            return {
+            const result = {
               name: `Holodex_${holodexVideoId}`,
               href: parentUrl
             };
+            console.log("[ChatHelper] getChannelInfo: 方法3成功（Holodex動画ID） -", result);
+            return result;
           }
           // リファラーから動画IDが取れない場合は汎用的な名前を使用
-          return {
+          const result = {
             name: `Holodex_Chat`,
             href: parentUrl
           };
+          console.log("[ChatHelper] getChannelInfo: 方法3成功（Holodex汎用） -", result);
+          return result;
         } else if (parentUrl && parentUrl.includes("youtube.com")) {
           // YouTubeからのリファラーから動画IDを抽出
           const youtubeMatch = parentUrl.match(/[?&]v=([^&]+)/);
