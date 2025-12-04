@@ -688,7 +688,8 @@ const CCPPP = {
   enabled: true,
   iframeData: new Map(), // iframe ごとのデータを管理
   isProcessing: false, // 処理中フラグ
-  maxSetupRetries: 5, // 最大リトライ回数
+  maxSetupRetries: 10, // 最大リトライ回数（Holodex multiview 対応のため増加）
+  retryDelay: 2000, // リトライ間隔（ミリ秒）
 
   init(iframe) {
     console.log("CCPPP: 初期化を開始します");
@@ -814,12 +815,21 @@ const CCPPP = {
       console.error("CCPPP: 入力欄が見つかりません");
       console.log("CCPPP: 試したセレクタ:", selectors);
 
+      // デバッグ情報を出力
+      if (iframe.contentDocument) {
+        const inputPanel = Utils.safeQuerySelector(iframe.contentDocument, "#input-panel");
+        console.log("CCPPP: #input-panel の存在:", !!inputPanel);
+        const textInputRenderer = Utils.safeQuerySelector(iframe.contentDocument, "yt-live-chat-text-input-field-renderer");
+        console.log("CCPPP: yt-live-chat-text-input-field-renderer の存在:", !!textInputRenderer);
+        console.log("CCPPP: iframe URL:", iframe.contentWindow?.location?.href || "不明");
+      }
+
       // リトライ回数をチェック
       if (data.setupRetryCount < this.maxSetupRetries) {
         data.setupRetryCount++;
-        console.log(`CCPPP: リトライします... (${data.setupRetryCount}/${this.maxSetupRetries})`);
+        console.log(`CCPPP: ${this.retryDelay}ms 後にリトライします... (${data.setupRetryCount}/${this.maxSetupRetries})`);
 
-        // 1秒後にリトライ（iframeの有効性を再確認）
+        // リトライ（iframeの有効性を再確認）
         setTimeout(() => {
           console.log("CCPPP: リトライ中...");
           // iframeがまだ有効かチェック
@@ -829,9 +839,10 @@ const CCPPP = {
             console.warn("CCPPP: リトライ時にiframeが無効になっています");
             data.setupRetryCount = 0; // カウンターをリセット
           }
-        }, 1000);
+        }, this.retryDelay);
       } else {
-        console.error(`CCPPP: 最大リトライ回数(${this.maxSetupRetries})に達しました。セットアップを中止します。`);
+        console.warn(`CCPPP: 最大リトライ回数(${this.maxSetupRetries})に達しました。ペーストリスナーのセットアップを中止します。`);
+        console.warn("CCPPP: emojiMap は利用可能ですが、ペースト機能は動作しません。");
         data.setupRetryCount = 0; // カウンターをリセット
       }
       return;
@@ -2312,15 +2323,19 @@ const StampLoader = {
     if (this.loaded) return;
     if (!Settings.get().autoLoadStamps) return;
 
+    // Holodex の multiview かどうかを判定
+    const isHolodexMultiview = window.location.href.includes("holodex.net/multiview");
+    const ccpppDelay = isHolodexMultiview ? 2000 : 500; // Holodex multiview の場合は長めに待つ
 
     setTimeout(() => {
       setTimeout(() => {
         this.loaded = true;
 
         // CCPPP初期化（スタンプ読み込み後）
+        console.log(`StampLoader: CCPPP を ${ccpppDelay}ms 後に初期化します ${isHolodexMultiview ? '(Holodex multiview モード)' : ''}`);
         setTimeout(() => {
           CCPPP.init(iframe);
-        }, 500);
+        }, ccpppDelay);
       }, 100);
     }, 1000);
   }
