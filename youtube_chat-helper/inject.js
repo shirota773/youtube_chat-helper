@@ -1435,13 +1435,19 @@ const UI = {
 
       // 保存ボタン（チャンネル用）
       const saveButton = this.createButton("save-channel-btn", "Save", () => {
+        console.log("[ChatHelper] Save ボタンがクリックされました");
         const data = this.readChatInput(iframe);
+        console.log("[ChatHelper] readChatInput の結果:", data);
+
         if (data && data.length > 0) {
           const currentChannelInfo = Utils.getChannelInfo();
+          console.log("[ChatHelper] テンプレートを保存します。データ数:", data.length);
           Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
             console.log("[ChatHelper] テンプレートを保存しました。ボタンを再構築します。");
             this.setupChatButtons(iframe);
           });
+        } else {
+          console.warn("[ChatHelper] データが空です。テンプレートを保存できません。");
         }
       }, "save-btn");
       buttonWrapper.appendChild(saveButton);
