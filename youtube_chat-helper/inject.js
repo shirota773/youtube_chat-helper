@@ -32,30 +32,60 @@ const Utils = {
     console.log("[ChatHelper] getChannelInfo: isInIframe =", isInIframe, "isYouTubeChatIframe =", isYouTubeChatIframe);
 
     if (isInIframe && isYouTubeChatIframe) {
-      // 方法1: チャンネル名の要素から取得
-      let channelElement = this.safeQuerySelector(
-        document,
-        "yt-live-chat-header-renderer #channel-name a, " +
-        "yt-live-chat-header-renderer yt-formatted-string a, " +
-        "#author-name a"
-      );
+      // 方法1: チャンネル名の要素から取得（複数のセレクタを試行）
+      const channelSelectors = [
+        "yt-live-chat-header-renderer #channel-name a",
+        "yt-live-chat-header-renderer yt-formatted-string a",
+        "#author-name a",
+        "yt-live-chat-header-renderer #chat-header-text a",
+        "#channel-name yt-formatted-string a",
+        "a[href*='/channel/']",
+        "a[href*='/@']"
+      ];
+
+      let channelElement = null;
+      for (const selector of channelSelectors) {
+        channelElement = this.safeQuerySelector(document, selector);
+        if (channelElement && channelElement.innerText && channelElement.innerText.trim()) {
+          console.log(`[ChatHelper] getChannelInfo: 方法1成功（セレクタ: ${selector}）`);
+          break;
+        }
+      }
 
       console.log("[ChatHelper] getChannelInfo: 方法1 - channelElement =", channelElement);
 
-      if (channelElement) {
+      if (channelElement && channelElement.innerText && channelElement.innerText.trim()) {
         const result = {
           name: channelElement.innerText.trim(),
           href: channelElement.href
         };
-        console.log("[ChatHelper] getChannelInfo: 方法1成功 -", result);
+        console.log("[ChatHelper] getChannelInfo: 方法1最終成功 -", result);
         return result;
       }
 
-      // 方法2: URLから動画IDを取得してチャンネル識別
+      // 方法2: URLと親URLから動画IDを取得（統一的に使用）
       const urlParams = new URLSearchParams(window.location.search);
-      const videoId = urlParams.get('v');
+      let videoId = urlParams.get('v');
 
-      console.log("[ChatHelper] getChannelInfo: 方法2 - videoId =", videoId);
+      console.log("[ChatHelper] getChannelInfo: 方法2 - iframe URLの videoId =", videoId);
+
+      // iframe URL に videoId がない場合、親 URL から取得
+      if (!videoId) {
+        try {
+          const parentUrl = document.referrer;
+          console.log("[ChatHelper] getChannelInfo: 方法2 - 親URLを確認:", parentUrl);
+
+          if (parentUrl) {
+            const parentVideoMatch = parentUrl.match(/[?&]v=([^&]+)/);
+            if (parentVideoMatch) {
+              videoId = parentVideoMatch[1];
+              console.log("[ChatHelper] getChannelInfo: 方法2 - 親URLから videoId 取得:", videoId);
+            }
+          }
+        } catch (e) {
+          console.warn("[ChatHelper] getChannelInfo: 親URLの取得に失敗:", e);
+        }
+      }
 
       if (videoId) {
         const result = {
