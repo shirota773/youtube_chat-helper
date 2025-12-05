@@ -6,6 +6,9 @@ const GLOBAL_CHANNEL_KEY = "__global__";
 
 // ユーティリティ関数
 const Utils = {
+  channelInfoCache: null, // チャンネル情報のキャッシュ
+  channelInfoCacheTime: 0, // キャッシュの有効期限（ミリ秒）
+
   safeQuerySelector(element, selector) {
     try {
       return element?.querySelector(selector) || null;
@@ -25,6 +28,14 @@ const Utils = {
   },
 
   getChannelInfo() {
+    // キャッシュをチェック（10秒間有効）
+    const now = Date.now();
+    const CACHE_DURATION = 10000; // 10秒
+    if (this.channelInfoCache && (now - this.channelInfoCacheTime) < CACHE_DURATION) {
+      console.log("[ChatHelper] getChannelInfo: キャッシュから返します -", this.channelInfoCache);
+      return this.channelInfoCache;
+    }
+
     // iframe内のYouTubeチャットで実行されている場合
     const isInIframe = window.self !== window.top;
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
@@ -60,6 +71,9 @@ const Utils = {
           href: channelElement.href
         };
         console.log("[ChatHelper] getChannelInfo: 方法1最終成功 -", result);
+        // キャッシュに保存
+        this.channelInfoCache = result;
+        this.channelInfoCacheTime = Date.now();
         return result;
       }
 
@@ -93,6 +107,9 @@ const Utils = {
           href: `https://www.youtube.com/watch?v=${videoId}`
         };
         console.log("[ChatHelper] getChannelInfo: 方法2成功 -", result);
+        // キャッシュに保存
+        this.channelInfoCache = result;
+        this.channelInfoCacheTime = Date.now();
         return result;
       }
 
@@ -2772,3 +2789,86 @@ if (document.readyState === "loading") {
 } else {
   ChatHelper.init();
 }
+
+// グローバルユーティリティ関数（コンソールから実行可能）
+window.ChatHelperUtils = {
+  // 保存されているすべてのテンプレートを削除
+  async clearAllTemplates() {
+    try {
+      await ChromeStorageHelper.set(STORAGE_KEY, { channels: [], global: [] });
+      console.log("%c[ChatHelper] すべてのテンプレートを削除しました", "color: green; font-weight: bold;");
+      console.log("[ChatHelper] ページをリロードしてください (F5)");
+      return true;
+    } catch (e) {
+      console.error("[ChatHelper] テンプレートの削除に失敗:", e);
+      return false;
+    }
+  },
+
+  // 保存されているデータを表示
+  async showAllTemplates() {
+    try {
+      const data = await ChromeStorageHelper.get(STORAGE_KEY);
+      console.log("%c[ChatHelper] 保存されているテンプレート:", "color: blue; font-weight: bold;");
+      console.log("グローバル:", data?.global || []);
+      console.log("チャンネル別:", data?.channels || []);
+      return data;
+    } catch (e) {
+      console.error("[ChatHelper] テンプレートの取得に失敗:", e);
+      return null;
+    }
+  },
+
+  // 特定のチャンネルのテンプレートを削除
+  async clearChannelTemplates(channelName) {
+    try {
+      const data = await ChromeStorageHelper.get(STORAGE_KEY) || { channels: [], global: [] };
+      const index = data.channels.findIndex(ch => ch.name === channelName);
+      if (index !== -1) {
+        data.channels.splice(index, 1);
+        await ChromeStorageHelper.set(STORAGE_KEY, data);
+        console.log(`%c[ChatHelper] チャンネル "${channelName}" のテンプレートを削除しました`, "color: green; font-weight: bold;");
+        console.log("[ChatHelper] ページをリロードしてください (F5)");
+        return true;
+      } else {
+        console.warn(`[ChatHelper] チャンネル "${channelName}" が見つかりません`);
+        return false;
+      }
+    } catch (e) {
+      console.error("[ChatHelper] テンプレートの削除に失敗:", e);
+      return false;
+    }
+  },
+
+  // グローバルテンプレートを削除
+  async clearGlobalTemplates() {
+    try {
+      const data = await ChromeStorageHelper.get(STORAGE_KEY) || { channels: [], global: [] };
+      data.global = [];
+      await ChromeStorageHelper.set(STORAGE_KEY, data);
+      console.log("%c[ChatHelper] グローバルテンプレートを削除しました", "color: green; font-weight: bold;");
+      console.log("[ChatHelper] ページをリロードしてください (F5)");
+      return true;
+    } catch (e) {
+      console.error("[ChatHelper] テンプレートの削除に失敗:", e);
+      return false;
+    }
+  },
+
+  // ヘルプを表示
+  help() {
+    console.log("%c[ChatHelper] 利用可能なコマンド:", "color: blue; font-weight: bold; font-size: 14px;");
+    console.log("  ChatHelperUtils.clearAllTemplates()      - すべてのテンプレートを削除");
+    console.log("  ChatHelperUtils.clearGlobalTemplates()   - グローバルテンプレートのみ削除");
+    console.log("  ChatHelperUtils.clearChannelTemplates('チャンネル名') - 特定チャンネルのテンプレートを削除");
+    console.log("  ChatHelperUtils.showAllTemplates()       - 保存されているテンプレートを表示");
+    console.log("  ChatHelperUtils.help()                   - このヘルプを表示");
+    console.log("");
+    console.log("%c使用例:", "color: green; font-weight: bold;");
+    console.log("  ChatHelperUtils.clearAllTemplates()");
+    console.log("  ChatHelperUtils.clearChannelTemplates('Video_6x6cYaz1kmE')");
+  }
+};
+
+// 初回ヘルプメッセージ
+console.log("%c[ChatHelper] ロードされました。使い方: ChatHelperUtils.help()", "color: blue; font-weight: bold;");
