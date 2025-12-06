@@ -40,7 +40,61 @@ const Utils = {
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
     if (isInIframe && isYouTubeChatIframe) {
-      // 優先度1: DOMからチャンネルIDを取得（UC... 形式）
+      // 優先度1: ytInitialDataからチャンネルIDを抽出（YouTube chat iframe用）
+      try {
+        if (typeof window.ytInitialData !== 'undefined' && window.ytInitialData) {
+          // continuationContents内を探索
+          const findChannelId = (obj) => {
+            if (!obj || typeof obj !== 'object') return null;
+
+            // authorExternalChannelId を探す（最も確実）
+            if (obj.authorExternalChannelId && typeof obj.authorExternalChannelId === 'string') {
+              if (obj.authorExternalChannelId.startsWith('UC')) {
+                return obj.authorExternalChannelId;
+              }
+            }
+
+            // externalChannelId を探す
+            if (obj.externalChannelId && typeof obj.externalChannelId === 'string') {
+              if (obj.externalChannelId.startsWith('UC')) {
+                return obj.externalChannelId;
+              }
+            }
+
+            // channelId を探す
+            if (obj.channelId && typeof obj.channelId === 'string') {
+              if (obj.channelId.startsWith('UC')) {
+                return obj.channelId;
+              }
+            }
+
+            // 再帰的に探索
+            for (const key in obj) {
+              if (obj.hasOwnProperty(key)) {
+                const result = findChannelId(obj[key]);
+                if (result) return result;
+              }
+            }
+
+            return null;
+          };
+
+          const channelId = findChannelId(window.ytInitialData);
+          if (channelId) {
+            const result = {
+              name: channelId,
+              href: `https://www.youtube.com/channel/${channelId}`
+            };
+            this.channelInfoCache = result;
+            this.channelInfoCacheTime = Date.now();
+            return result;
+          }
+        }
+      } catch (e) {
+        console.warn('[ChatHelper] ytInitialDataからのチャンネルID抽出に失敗:', e);
+      }
+
+      // 優先度2: DOMからチャンネルIDを取得（Holodex iframe用）
       const channelIdSelectors = [
         "yt-live-chat-header-renderer a[href*='/channel/']",
         "a[href*='/channel/']",
@@ -80,7 +134,7 @@ const Utils = {
         }
       }
 
-      // 優先度2: URLから動画IDを取得（フォールバック）
+      // 優先度3: URLから動画IDを取得（フォールバック）
       const urlParams = new URLSearchParams(window.location.search);
       let videoId = urlParams.get('v');
 
@@ -2786,6 +2840,68 @@ window.ChatHelperUtils = {
 
       const data = await ChromeStorageHelper.get(STORAGE_KEY);
       const results = [];
+
+      // 方法0: ytInitialDataからチャンネルID取得（YouTube chat iframe用）
+      console.log("%c【方法0】ytInitialDataからチャンネルID (UC...) を取得", "color: yellow; font-weight: bold;");
+      let method0Found = null;
+      try {
+        if (typeof window.ytInitialData !== 'undefined' && window.ytInitialData) {
+          const findChannelId = (obj) => {
+            if (!obj || typeof obj !== 'object') return null;
+            if (obj.authorExternalChannelId && typeof obj.authorExternalChannelId === 'string') {
+              if (obj.authorExternalChannelId.startsWith('UC')) return obj.authorExternalChannelId;
+            }
+            if (obj.externalChannelId && typeof obj.externalChannelId === 'string') {
+              if (obj.externalChannelId.startsWith('UC')) return obj.externalChannelId;
+            }
+            if (obj.channelId && typeof obj.channelId === 'string') {
+              if (obj.channelId.startsWith('UC')) return obj.channelId;
+            }
+            for (const key in obj) {
+              if (obj.hasOwnProperty(key)) {
+                const result = findChannelId(obj[key]);
+                if (result) return result;
+              }
+            }
+            return null;
+          };
+
+          const channelId = findChannelId(window.ytInitialData);
+          if (channelId) {
+            method0Found = { id: channelId, type: 'UC' };
+            console.log(`  ✓ 見つかった: ${channelId}`);
+          }
+        }
+      } catch (e) {
+        console.log("  × エラー:", e.message);
+      }
+
+      if (method0Found) {
+        const matched = data?.channels?.find(ch => {
+          if (!ch.aliases) ch.aliases = [ch.name];
+          return ch.aliases.includes(method0Found.id);
+        });
+        results.push({
+          方法: '方法0 - ytInitialData',
+          取得ID: method0Found.id,
+          タイプ: method0Found.type,
+          マッチ: matched ? '○' : '×',
+          テンプレート数: matched ? matched.data.length : 0,
+          エイリアス: matched ? matched.aliases.join(', ') : '-'
+        });
+        console.log(`  → 保存データとのマッチ: ${matched ? '○ (' + matched.data.length + '個)' : '× なし'}`);
+      } else {
+        results.push({
+          方法: '方法0 - ytInitialData',
+          取得ID: '(見つからない)',
+          タイプ: '-',
+          マッチ: '×',
+          テンプレート数: 0,
+          エイリアス: '-'
+        });
+        console.log("  × 見つからない");
+      }
+      console.log("");
 
       // 方法1: DOMからチャンネルID取得（UC... または @handle）
       console.log("%c【方法1】DOMからチャンネルID (UC...) または @handle を取得", "color: yellow; font-weight: bold;");
