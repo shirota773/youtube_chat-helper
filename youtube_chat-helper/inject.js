@@ -32,7 +32,6 @@ const Utils = {
     const now = Date.now();
     const CACHE_DURATION = 10000; // 10秒
     if (this.channelInfoCache && (now - this.channelInfoCacheTime) < CACHE_DURATION) {
-      console.log("[ChatHelper] getChannelInfo: キャッシュから返します -", this.channelInfoCache);
       return this.channelInfoCache;
     }
 
@@ -40,31 +39,59 @@ const Utils = {
     const isInIframe = window.self !== window.top;
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
-    console.log("[ChatHelper] getChannelInfo: isInIframe =", isInIframe, "isYouTubeChatIframe =", isYouTubeChatIframe);
-
     if (isInIframe && isYouTubeChatIframe) {
-      // 方法2: URLから動画IDを取得（YouTube/Holodex統一方式）
-      // まず iframe URL の v パラメータをチェック
+      // 優先度1: DOMからチャンネルIDを取得（UC... 形式）
+      const channelIdSelectors = [
+        "yt-live-chat-header-renderer a[href*='/channel/']",
+        "a[href*='/channel/']",
+        "#author-photo a[href*='/channel/']",
+        "yt-live-chat-header-renderer a[href*='/@']",
+        "a[href*='/@']"
+      ];
+
+      for (const selector of channelIdSelectors) {
+        const element = this.safeQuerySelector(document, selector);
+        if (element && element.href) {
+          // /channel/UC... 形式から抽出
+          const channelMatch = element.href.match(/\/channel\/(UC[^/?]+)/);
+          if (channelMatch) {
+            const channelId = channelMatch[1];
+            const result = {
+              name: channelId,
+              href: element.href
+            };
+            this.channelInfoCache = result;
+            this.channelInfoCacheTime = Date.now();
+            return result;
+          }
+
+          // /@username 形式
+          const handleMatch = element.href.match(/\/@([^/?]+)/);
+          if (handleMatch) {
+            const handle = `@${handleMatch[1]}`;
+            const result = {
+              name: handle,
+              href: element.href
+            };
+            this.channelInfoCache = result;
+            this.channelInfoCacheTime = Date.now();
+            return result;
+          }
+        }
+      }
+
+      // 優先度2: URLから動画IDを取得（フォールバック）
       const urlParams = new URLSearchParams(window.location.search);
       let videoId = urlParams.get('v');
 
-      console.log("[ChatHelper] getChannelInfo: iframe URLの videoId =", videoId);
-
       // iframe URL に videoId がない場合、親 URL から取得
       if (!videoId) {
-        try {
-          const parentUrl = document.referrer;
-          console.log("[ChatHelper] getChannelInfo: 親URLを確認:", parentUrl);
-
-          if (parentUrl) {
-            const parentVideoMatch = parentUrl.match(/[?&]v=([^&]+)/);
-            if (parentVideoMatch) {
-              videoId = parentVideoMatch[1];
-              console.log("[ChatHelper] getChannelInfo: 親URLから videoId 取得:", videoId);
-            }
+        const parentUrl = document.referrer;
+        if (parentUrl) {
+          const parentVideoMatch = parentUrl.match(/[?&]v=([^&]+)/);
+          if (parentVideoMatch) {
+            videoId = parentVideoMatch[1];
           }
-        } catch (e) {
-          console.warn("[ChatHelper] getChannelInfo: 親URLの取得に失敗:", e);
         }
       }
 
@@ -73,16 +100,12 @@ const Utils = {
           name: `Video_${videoId}`,
           href: `https://www.youtube.com/watch?v=${videoId}`
         };
-        console.log("[ChatHelper] getChannelInfo: 成功 -", result);
-        // キャッシュに保存
         this.channelInfoCache = result;
         this.channelInfoCacheTime = Date.now();
         return result;
       }
 
-      console.warn("[ChatHelper] getChannelInfo: 動画IDを取得できませんでした");
-
-      // 最終フォールバック: 汎用的なチャンネル名を返す
+      // 最終フォールバック
       return {
         name: "Unknown_Channel",
         href: window.location.href
@@ -515,7 +538,6 @@ const Storage = {
 
       if (channelIndex === -1) {
         // 新しいチャンネルを作成
-        console.log(`[Storage] 新しいチャンネルを作成: ${channelInfo.name}`);
         data.channels.push({
           name: channelInfo.name,
           href: channelInfo.href,
@@ -528,7 +550,6 @@ const Storage = {
 
         // 現在の識別子がエイリアスリストになければ追加
         if (!channel.aliases.includes(channelInfo.name)) {
-          console.log(`[Storage] エイリアスを追加: ${channelInfo.name} → チャンネル ${channel.name}`);
           channel.aliases.push(channelInfo.name);
         }
 
@@ -717,7 +738,6 @@ const Storage = {
       });
 
       if (channel) {
-        console.log(`[Storage] テンプレート取得: ${channelName} → チャンネル ${channel.name} (エイリアス: ${channel.aliases.join(', ')})`);
         result.channel = channel.data.map((t, i) => ({ ...t, index: i, isGlobal: false }));
       }
     }
