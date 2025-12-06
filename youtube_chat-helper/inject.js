@@ -2698,6 +2698,84 @@ window.ChatHelperUtils = {
     }
   },
 
+  // 現在のチャンネル情報とテンプレートを表示
+  async checkCurrentChannel() {
+    try {
+      console.log("%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "color: cyan; font-weight: bold;");
+      console.log("%c現在のチャンネル情報", "color: cyan; font-weight: bold; font-size: 14px;");
+      console.log("%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "color: cyan; font-weight: bold;");
+      console.log("");
+
+      // 現在のチャンネル情報を取得
+      const channelInfo = Utils.getChannelInfo();
+
+      console.log("%c【取得されたチャンネル情報】", "color: yellow; font-weight: bold;");
+      console.log("  識別子:", channelInfo?.name || "(なし)");
+      console.log("  URL:", channelInfo?.href || "(なし)");
+      console.log("");
+
+      // 保存されているデータを取得
+      const data = await ChromeStorageHelper.get(STORAGE_KEY);
+
+      console.log("%c【グローバルテンプレート】", "color: green; font-weight: bold;");
+      console.log("  テンプレート数:", data?.global?.length || 0);
+      console.log("");
+
+      // 現在の識別子に対応するチャンネルを検索
+      console.log("%c【このチャンネルのテンプレート検索】", "color: orange; font-weight: bold;");
+
+      if (!channelInfo || !channelInfo.name) {
+        console.log("  ⚠ チャンネル情報が取得できませんでした");
+      } else {
+        const matchedChannel = data?.channels?.find(ch => {
+          if (!ch.aliases) ch.aliases = [ch.name];
+          return ch.aliases.includes(channelInfo.name);
+        });
+
+        if (matchedChannel) {
+          console.log("  ✓ マッチしたチャンネルが見つかりました:");
+          console.log("    メイン名:", matchedChannel.name);
+          console.log("    エイリアス:", matchedChannel.aliases.join(', '));
+          console.log("    テンプレート数:", matchedChannel.data.length);
+          console.log("    URL:", matchedChannel.href);
+          console.log("");
+          console.log("  テンプレート内容:");
+          matchedChannel.data.forEach((template, index) => {
+            console.log(`    ${index + 1}. ${template.caption}`);
+          });
+        } else {
+          console.log("  × マッチするチャンネルが見つかりません");
+          console.log("  → 新規テンプレート保存時に、このチャンネルが作成されます");
+        }
+      }
+
+      console.log("");
+      console.log("%c【保存されているすべてのチャンネル】", "color: magenta; font-weight: bold;");
+
+      if (data?.channels && data.channels.length > 0) {
+        console.table(data.channels.map(ch => ({
+          'メイン名': ch.name,
+          'エイリアス': ch.aliases ? ch.aliases.join(', ') : ch.name,
+          'テンプレート数': ch.data.length
+        })));
+      } else {
+        console.log("  (チャンネル別テンプレートはありません)");
+      }
+
+      console.log("");
+      console.log("%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "color: cyan; font-weight: bold;");
+
+      return {
+        current: channelInfo,
+        matched: matchedChannel || null,
+        all: data
+      };
+    } catch (e) {
+      console.error("[ChatHelper] エラー:", e);
+      return null;
+    }
+  },
+
   // チャンネル情報の取得方法をデバッグ表示
   debugChannelInfo() {
     console.log("%c[ChatHelper] チャンネル情報の取得方法をデバッグします", "color: orange; font-weight: bold; font-size: 14px;");
@@ -2956,17 +3034,22 @@ window.ChatHelperUtils = {
   // ヘルプを表示
   help() {
     console.log("%c[ChatHelper] 利用可能なコマンド:", "color: blue; font-weight: bold; font-size: 14px;");
+    console.log("");
+    console.log("%c【確認用】", "color: cyan; font-weight: bold;");
+    console.log("  ChatHelperUtils.checkCurrentChannel()    - ★現在のチャンネル情報とテンプレートを表示");
+    console.log("  ChatHelperUtils.showAllTemplates()       - 保存されているテンプレートを表示");
+    console.log("  ChatHelperUtils.debugChannelInfo()       - チャンネル情報の取得方法をデバッグ");
+    console.log("");
+    console.log("%c【削除用】", "color: red; font-weight: bold;");
     console.log("  ChatHelperUtils.clearAllTemplates()      - すべてのテンプレートを削除");
     console.log("  ChatHelperUtils.clearGlobalTemplates()   - グローバルテンプレートのみ削除");
     console.log("  ChatHelperUtils.clearChannelTemplates('チャンネル名') - 特定チャンネルのテンプレートを削除");
-    console.log("  ChatHelperUtils.showAllTemplates()       - 保存されているテンプレートを表示");
-    console.log("  ChatHelperUtils.debugChannelInfo()       - チャンネル情報の取得方法をデバッグ");
+    console.log("");
     console.log("  ChatHelperUtils.help()                   - このヘルプを表示");
     console.log("");
-    console.log("%c使用例:", "color: green; font-weight: bold;");
-    console.log("  ChatHelperUtils.clearAllTemplates()");
-    console.log("  ChatHelperUtils.clearChannelTemplates('Video_6x6cYaz1kmE')");
-    console.log("  ChatHelperUtils.debugChannelInfo()");
+    console.log("%c推奨の使い方:", "color: green; font-weight: bold;");
+    console.log("  1. ChatHelperUtils.checkCurrentChannel() でチャンネルIDを確認");
+    console.log("  2. YouTubeとHolodexで比較してフィードバック");
   }
 };
 
