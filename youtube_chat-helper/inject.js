@@ -504,15 +504,38 @@ const Storage = {
         return await this.saveData(data);
       }
 
-      let channelIndex = data.channels.findIndex(ch => ch.name === channelInfo.name);
+      // エイリアスシステム: 現在の識別子がどのチャンネルのエイリアスにも含まれているか検索
+      let channelIndex = data.channels.findIndex(ch => {
+        // 後方互換性: 古いデータ構造（aliasesなし）もサポート
+        if (!ch.aliases) {
+          ch.aliases = [ch.name]; // 初回は name をエイリアスに追加
+        }
+        return ch.aliases.includes(channelInfo.name);
+      });
+
       if (channelIndex === -1) {
+        // 新しいチャンネルを作成
+        console.log(`[Storage] 新しいチャンネルを作成: ${channelInfo.name}`);
         data.channels.push({
           name: channelInfo.name,
           href: channelInfo.href,
+          aliases: [channelInfo.name], // エイリアスリストに追加
           data: [template]
         });
       } else {
-        data.channels[channelIndex].data.push(template);
+        // 既存のチャンネルにテンプレートを追加
+        const channel = data.channels[channelIndex];
+
+        // 現在の識別子がエイリアスリストになければ追加
+        if (!channel.aliases.includes(channelInfo.name)) {
+          console.log(`[Storage] エイリアスを追加: ${channelInfo.name} → チャンネル ${channel.name}`);
+          channel.aliases.push(channelInfo.name);
+        }
+
+        // hrefを最新のものに更新
+        channel.href = channelInfo.href;
+
+        channel.data.push(template);
       }
     }
 
@@ -527,11 +550,19 @@ const Storage = {
         data.global.splice(index, 1);
       }
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      // エイリアスシステム対応
+      const channel = data.channels.find(ch => {
+        if (!ch.aliases) ch.aliases = [ch.name];
+        return ch.aliases.includes(channelName);
+      });
       if (!channel) return false;
       channel.data.splice(index, 1);
       if (channel.data.length === 0) {
-        data.channels = data.channels.filter(ch => ch.name !== channelName);
+        // チャンネルを削除する際も、エイリアスで検索
+        data.channels = data.channels.filter(ch => {
+          if (!ch.aliases) ch.aliases = [ch.name];
+          return !ch.aliases.includes(channelName);
+        });
       }
     }
 
@@ -548,11 +579,18 @@ const Storage = {
       if (!data.global || !data.global[index]) return false;
       template = data.global.splice(index, 1)[0];
     } else {
-      const channel = data.channels.find(ch => ch.name === fromChannel);
+      // エイリアスシステム対応
+      const channel = data.channels.find(ch => {
+        if (!ch.aliases) ch.aliases = [ch.name];
+        return ch.aliases.includes(fromChannel);
+      });
       if (!channel || !channel.data[index]) return false;
       template = channel.data.splice(index, 1)[0];
       if (channel.data.length === 0) {
-        data.channels = data.channels.filter(ch => ch.name !== fromChannel);
+        data.channels = data.channels.filter(ch => {
+          if (!ch.aliases) ch.aliases = [ch.name];
+          return !ch.aliases.includes(fromChannel);
+        });
       }
     }
 
@@ -564,15 +602,26 @@ const Storage = {
       const channelInfo = Utils.getChannelInfo();
       if (!channelInfo) return false;
 
-      let channelIndex = data.channels.findIndex(ch => ch.name === channelInfo.name);
+      // エイリアスシステム対応: 既存チャンネルを検索
+      let channelIndex = data.channels.findIndex(ch => {
+        if (!ch.aliases) ch.aliases = [ch.name];
+        return ch.aliases.includes(channelInfo.name);
+      });
+
       if (channelIndex === -1) {
         data.channels.push({
           name: channelInfo.name,
           href: channelInfo.href,
+          aliases: [channelInfo.name],
           data: [template]
         });
       } else {
-        data.channels[channelIndex].data.push(template);
+        const channel = data.channels[channelIndex];
+        // エイリアスリストに現在の名前を追加
+        if (!channel.aliases.includes(channelInfo.name)) {
+          channel.aliases.push(channelInfo.name);
+        }
+        channel.data.push(template);
       }
     }
 
@@ -586,7 +635,11 @@ const Storage = {
     if (channelName === GLOBAL_CHANNEL_KEY) {
       templates = data.global || [];
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      // エイリアスシステム対応
+      const channel = data.channels.find(ch => {
+        if (!ch.aliases) ch.aliases = [ch.name];
+        return ch.aliases.includes(channelName);
+      });
       if (!channel) return false;
       templates = channel.data;
     }
@@ -654,8 +707,17 @@ const Storage = {
     }
 
     if (channelName) {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      // エイリアスシステム: channelName がエイリアスに含まれるチャンネルを検索
+      const channel = data.channels.find(ch => {
+        // 後方互換性: 古いデータ構造もサポート
+        if (!ch.aliases) {
+          ch.aliases = [ch.name];
+        }
+        return ch.aliases.includes(channelName);
+      });
+
       if (channel) {
+        console.log(`[Storage] テンプレート取得: ${channelName} → チャンネル ${channel.name} (エイリアス: ${channel.aliases.join(', ')})`);
         result.channel = channel.data.map((t, i) => ({ ...t, index: i, isGlobal: false }));
       }
     }
@@ -2729,8 +2791,20 @@ window.ChatHelperUtils = {
     try {
       const data = await ChromeStorageHelper.get(STORAGE_KEY);
       console.log("%c[ChatHelper] 保存されているテンプレート:", "color: blue; font-weight: bold;");
+      console.log("");
       console.log("グローバル:", data?.global || []);
-      console.log("チャンネル別:", data?.channels || []);
+      console.log("");
+      console.log("チャンネル別:");
+      if (data?.channels && data.channels.length > 0) {
+        data.channels.forEach((ch, index) => {
+          console.log(`  ${index + 1}. ${ch.name}`);
+          console.log(`     エイリアス: ${ch.aliases ? ch.aliases.join(', ') : ch.name}`);
+          console.log(`     テンプレート数: ${ch.data.length}`);
+          console.log(`     URL: ${ch.href}`);
+        });
+      } else {
+        console.log("  (なし)");
+      }
       return data;
     } catch (e) {
       console.error("[ChatHelper] テンプレートの取得に失敗:", e);
@@ -2742,11 +2816,17 @@ window.ChatHelperUtils = {
   async clearChannelTemplates(channelName) {
     try {
       const data = await ChromeStorageHelper.get(STORAGE_KEY) || { channels: [], global: [] };
-      const index = data.channels.findIndex(ch => ch.name === channelName);
+      // エイリアスシステム対応
+      const index = data.channels.findIndex(ch => {
+        if (!ch.aliases) ch.aliases = [ch.name];
+        return ch.aliases.includes(channelName);
+      });
       if (index !== -1) {
+        const channel = data.channels[index];
+        console.log(`%c[ChatHelper] チャンネル "${channelName}" のテンプレートを削除しました`, "color: green; font-weight: bold;");
+        console.log(`  エイリアス: ${channel.aliases.join(', ')}`);
         data.channels.splice(index, 1);
         await ChromeStorageHelper.set(STORAGE_KEY, data);
-        console.log(`%c[ChatHelper] チャンネル "${channelName}" のテンプレートを削除しました`, "color: green; font-weight: bold;");
         console.log("[ChatHelper] ページをリロードしてください (F5)");
         return true;
       } else {
