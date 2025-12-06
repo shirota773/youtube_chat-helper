@@ -43,57 +43,24 @@ const Utils = {
     console.log("[ChatHelper] getChannelInfo: isInIframe =", isInIframe, "isYouTubeChatIframe =", isYouTubeChatIframe);
 
     if (isInIframe && isYouTubeChatIframe) {
-      // 方法1: チャンネル名の要素から取得（複数のセレクタを試行）
-      const channelSelectors = [
-        "yt-live-chat-header-renderer #channel-name a",
-        "yt-live-chat-header-renderer yt-formatted-string a",
-        "#author-name a",
-        "yt-live-chat-header-renderer #chat-header-text a",
-        "#channel-name yt-formatted-string a",
-        "a[href*='/channel/']",
-        "a[href*='/@']"
-      ];
-
-      let channelElement = null;
-      for (const selector of channelSelectors) {
-        channelElement = this.safeQuerySelector(document, selector);
-        if (channelElement && channelElement.innerText && channelElement.innerText.trim()) {
-          console.log(`[ChatHelper] getChannelInfo: 方法1成功（セレクタ: ${selector}）`);
-          break;
-        }
-      }
-
-      console.log("[ChatHelper] getChannelInfo: 方法1 - channelElement =", channelElement);
-
-      if (channelElement && channelElement.innerText && channelElement.innerText.trim()) {
-        const result = {
-          name: channelElement.innerText.trim(),
-          href: channelElement.href
-        };
-        console.log("[ChatHelper] getChannelInfo: 方法1最終成功 -", result);
-        // キャッシュに保存
-        this.channelInfoCache = result;
-        this.channelInfoCacheTime = Date.now();
-        return result;
-      }
-
-      // 方法2: URLと親URLから動画IDを取得（統一的に使用）
+      // 方法2: URLから動画IDを取得（YouTube/Holodex統一方式）
+      // まず iframe URL の v パラメータをチェック
       const urlParams = new URLSearchParams(window.location.search);
       let videoId = urlParams.get('v');
 
-      console.log("[ChatHelper] getChannelInfo: 方法2 - iframe URLの videoId =", videoId);
+      console.log("[ChatHelper] getChannelInfo: iframe URLの videoId =", videoId);
 
       // iframe URL に videoId がない場合、親 URL から取得
       if (!videoId) {
         try {
           const parentUrl = document.referrer;
-          console.log("[ChatHelper] getChannelInfo: 方法2 - 親URLを確認:", parentUrl);
+          console.log("[ChatHelper] getChannelInfo: 親URLを確認:", parentUrl);
 
           if (parentUrl) {
             const parentVideoMatch = parentUrl.match(/[?&]v=([^&]+)/);
             if (parentVideoMatch) {
               videoId = parentVideoMatch[1];
-              console.log("[ChatHelper] getChannelInfo: 方法2 - 親URLから videoId 取得:", videoId);
+              console.log("[ChatHelper] getChannelInfo: 親URLから videoId 取得:", videoId);
             }
           }
         } catch (e) {
@@ -106,62 +73,14 @@ const Utils = {
           name: `Video_${videoId}`,
           href: `https://www.youtube.com/watch?v=${videoId}`
         };
-        console.log("[ChatHelper] getChannelInfo: 方法2成功 -", result);
+        console.log("[ChatHelper] getChannelInfo: 成功 -", result);
         // キャッシュに保存
         this.channelInfoCache = result;
         this.channelInfoCacheTime = Date.now();
         return result;
       }
 
-      // 方法3: 親URLを参照（Holodex対応）
-      try {
-        const parentUrl = document.referrer;
-        console.log("[ChatHelper] getChannelInfo: 方法3 - parentUrl =", parentUrl);
-
-        if (parentUrl && parentUrl.includes("holodex.net")) {
-          // Holodexの場合、リファラーURLから情報を抽出
-          const holodexMatch = parentUrl.match(/holodex\.net\/watch\/([^/?]+)/);
-          if (holodexMatch) {
-            const holodexVideoId = holodexMatch[1];
-            const result = {
-              name: `Holodex_${holodexVideoId}`,
-              href: parentUrl
-            };
-            console.log("[ChatHelper] getChannelInfo: 方法3成功（Holodex動画ID） -", result);
-            return result;
-          }
-          // リファラーから動画IDが取れない場合は汎用的な名前を使用
-          const result = {
-            name: `Holodex_Chat`,
-            href: parentUrl
-          };
-          console.log("[ChatHelper] getChannelInfo: 方法3成功（Holodex汎用） -", result);
-          return result;
-        } else if (parentUrl && parentUrl.includes("youtube.com")) {
-          // YouTubeからのリファラーから動画IDを抽出
-          const youtubeMatch = parentUrl.match(/[?&]v=([^&]+)/);
-          if (youtubeMatch) {
-            const youtubeVideoId = youtubeMatch[1];
-            return {
-              name: `Video_${youtubeVideoId}`,
-              href: `https://www.youtube.com/watch?v=${youtubeVideoId}`
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[ChatHelper] リファラーの取得に失敗:", e);
-      }
-
-      // 方法4: iframeのURL自体から情報を取得
-      const iframeUrl = window.location.href;
-      const iframeVideoMatch = iframeUrl.match(/[?&]v=([^&]+)/);
-      if (iframeVideoMatch) {
-        const fallbackVideoId = iframeVideoMatch[1];
-        return {
-          name: `Video_${fallbackVideoId}`,
-          href: `https://www.youtube.com/watch?v=${fallbackVideoId}`
-        };
-      }
+      console.warn("[ChatHelper] getChannelInfo: 動画IDを取得できませんでした");
 
       // 最終フォールバック: 汎用的なチャンネル名を返す
       return {
