@@ -2776,6 +2776,178 @@ window.ChatHelperUtils = {
     }
   },
 
+  // 全てのチャンネルID取得方法をテストして結果と対応データを表示
+  async testAllMethods() {
+    try {
+      console.log("%c╔════════════════════════════════════════════════════════════╗", "color: lime; font-weight: bold;");
+      console.log("%c║  全チャンネルID取得方法のテスト                            ║", "color: lime; font-weight: bold;");
+      console.log("%c╚════════════════════════════════════════════════════════════╝", "color: lime; font-weight: bold;");
+      console.log("");
+
+      const data = await ChromeStorageHelper.get(STORAGE_KEY);
+      const results = [];
+
+      // 方法1: DOMからチャンネルID取得（UC... または @handle）
+      console.log("%c【方法1】DOMからチャンネルID (UC...) または @handle を取得", "color: yellow; font-weight: bold;");
+      const channelIdSelectors = [
+        { name: "live-chat-header a[href*='/channel/']", selector: "yt-live-chat-header-renderer a[href*='/channel/']" },
+        { name: "any a[href*='/channel/']", selector: "a[href*='/channel/']" },
+        { name: "author-photo a", selector: "#author-photo a[href*='/channel/']" },
+        { name: "live-chat-header a[href*='/@']", selector: "yt-live-chat-header-renderer a[href*='/@']" },
+        { name: "any a[href*='/@']", selector: "a[href*='/@']" }
+      ];
+
+      let method1Found = null;
+      for (const {name, selector} of channelIdSelectors) {
+        const element = document.querySelector(selector);
+        if (element && element.href) {
+          // UC... 形式
+          const channelMatch = element.href.match(/\/channel\/(UC[^/?]+)/);
+          if (channelMatch) {
+            method1Found = { id: channelMatch[1], type: 'UC', selector: name, href: element.href };
+            console.log(`  ✓ 見つかった (${name}): ${channelMatch[1]}`);
+            break;
+          }
+          // @handle 形式
+          const handleMatch = element.href.match(/\/@([^/?]+)/);
+          if (handleMatch) {
+            method1Found = { id: `@${handleMatch[1]}`, type: '@', selector: name, href: element.href };
+            console.log(`  ✓ 見つかった (${name}): @${handleMatch[1]}`);
+            break;
+          }
+        }
+      }
+
+      if (method1Found) {
+        const matched = data?.channels?.find(ch => {
+          if (!ch.aliases) ch.aliases = [ch.name];
+          return ch.aliases.includes(method1Found.id);
+        });
+        results.push({
+          方法: '方法1 - DOM',
+          取得ID: method1Found.id,
+          タイプ: method1Found.type,
+          マッチ: matched ? '○' : '×',
+          テンプレート数: matched ? matched.data.length : 0,
+          エイリアス: matched ? matched.aliases.join(', ') : '-'
+        });
+        console.log(`  → 保存データとのマッチ: ${matched ? '○ (' + matched.data.length + '個)' : '× なし'}`);
+      } else {
+        results.push({
+          方法: '方法1 - DOM',
+          取得ID: '(見つからない)',
+          タイプ: '-',
+          マッチ: '×',
+          テンプレート数: 0,
+          エイリアス: '-'
+        });
+        console.log("  × 見つからない");
+      }
+      console.log("");
+
+      // 方法2: iframe URLから動画ID取得
+      console.log("%c【方法2】iframe URLから動画IDを取得", "color: yellow; font-weight: bold;");
+      const urlParams = new URLSearchParams(window.location.search);
+      const iframeVideoId = urlParams.get('v');
+
+      if (iframeVideoId) {
+        const id = `Video_${iframeVideoId}`;
+        console.log(`  ✓ 見つかった: ${id}`);
+        const matched = data?.channels?.find(ch => {
+          if (!ch.aliases) ch.aliases = [ch.name];
+          return ch.aliases.includes(id);
+        });
+        results.push({
+          方法: '方法2 - iframe URL',
+          取得ID: id,
+          タイプ: 'Video',
+          マッチ: matched ? '○' : '×',
+          テンプレート数: matched ? matched.data.length : 0,
+          エイリアス: matched ? matched.aliases.join(', ') : '-'
+        });
+        console.log(`  → 保存データとのマッチ: ${matched ? '○ (' + matched.data.length + '個)' : '× なし'}`);
+      } else {
+        results.push({
+          方法: '方法2 - iframe URL',
+          取得ID: '(見つからない)',
+          タイプ: '-',
+          マッチ: '×',
+          テンプレート数: 0,
+          エイリアス: '-'
+        });
+        console.log("  × 見つからない");
+      }
+      console.log("");
+
+      // 方法3: 親URLから動画ID取得
+      console.log("%c【方法3】親URL (referrer) から動画IDを取得", "color: yellow; font-weight: bold;");
+      const parentUrl = document.referrer;
+
+      if (parentUrl) {
+        const parentVideoMatch = parentUrl.match(/[?&]v=([^&]+)/);
+        if (parentVideoMatch) {
+          const id = `Video_${parentVideoMatch[1]}`;
+          console.log(`  ✓ 見つかった: ${id}`);
+          const matched = data?.channels?.find(ch => {
+            if (!ch.aliases) ch.aliases = [ch.name];
+            return ch.aliases.includes(id);
+          });
+          results.push({
+            方法: '方法3 - 親URL',
+            取得ID: id,
+            タイプ: 'Video',
+            マッチ: matched ? '○' : '×',
+            テンプレート数: matched ? matched.data.length : 0,
+            エイリアス: matched ? matched.aliases.join(', ') : '-'
+          });
+          console.log(`  → 保存データとのマッチ: ${matched ? '○ (' + matched.data.length + '個)' : '× なし'}`);
+        } else {
+          results.push({
+            方法: '方法3 - 親URL',
+            取得ID: '(見つからない)',
+            タイプ: '-',
+            マッチ: '×',
+            テンプレート数: 0,
+            エイリアス: '-'
+          });
+          console.log("  × 見つからない (referrer:", parentUrl, ")");
+        }
+      } else {
+        results.push({
+          方法: '方法3 - 親URL',
+          取得ID: '(referrerなし)',
+          タイプ: '-',
+          マッチ: '×',
+          テンプレート数: 0,
+          エイリアス: '-'
+        });
+        console.log("  × referrer なし");
+      }
+      console.log("");
+
+      // 結果まとめ
+      console.log("%c【結果まとめ】", "color: cyan; font-weight: bold; font-size: 14px;");
+      console.table(results);
+
+      console.log("");
+      console.log("%c【現在実際に使用されているID】", "color: lime; font-weight: bold;");
+      const currentInfo = Utils.getChannelInfo();
+      console.log("  ID:", currentInfo?.name || "(なし)");
+      console.log("  URL:", currentInfo?.href || "(なし)");
+
+      console.log("");
+      console.log("%c╔════════════════════════════════════════════════════════════╗", "color: lime; font-weight: bold;");
+      console.log("%c║  テスト完了                                                ║", "color: lime; font-weight: bold;");
+      console.log("%c╚════════════════════════════════════════════════════════════╝", "color: lime; font-weight: bold;");
+
+      return { results, current: currentInfo, data };
+    } catch (e) {
+      console.error("[ChatHelper] エラー:", e);
+      return null;
+    }
+  },
+
+
   // チャンネル情報の取得方法をデバッグ表示
   debugChannelInfo() {
     console.log("%c[ChatHelper] チャンネル情報の取得方法をデバッグします", "color: orange; font-weight: bold; font-size: 14px;");
@@ -3036,7 +3208,8 @@ window.ChatHelperUtils = {
     console.log("%c[ChatHelper] 利用可能なコマンド:", "color: blue; font-weight: bold; font-size: 14px;");
     console.log("");
     console.log("%c【確認用】", "color: cyan; font-weight: bold;");
-    console.log("  ChatHelperUtils.checkCurrentChannel()    - ★現在のチャンネル情報とテンプレートを表示");
+    console.log("  ChatHelperUtils.testAllMethods()         - ★★全取得方法をテストして結果表示（デバッグ推奨）");
+    console.log("  ChatHelperUtils.checkCurrentChannel()    - 現在のチャンネル情報とテンプレートを表示");
     console.log("  ChatHelperUtils.showAllTemplates()       - 保存されているテンプレートを表示");
     console.log("  ChatHelperUtils.debugChannelInfo()       - チャンネル情報の取得方法をデバッグ");
     console.log("");
@@ -3048,8 +3221,9 @@ window.ChatHelperUtils = {
     console.log("  ChatHelperUtils.help()                   - このヘルプを表示");
     console.log("");
     console.log("%c推奨の使い方:", "color: green; font-weight: bold;");
-    console.log("  1. ChatHelperUtils.checkCurrentChannel() でチャンネルIDを確認");
-    console.log("  2. YouTubeとHolodexで比較してフィードバック");
+    console.log("  1. ChatHelperUtils.testAllMethods() で全取得方法の結果を確認");
+    console.log("  2. YouTubeとHolodexで実行して結果を比較");
+    console.log("  3. 結果をフィードバック");
   }
 };
 
