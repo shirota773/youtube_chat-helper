@@ -2545,19 +2545,16 @@ const ChatHelper = {
 
     // 現在のフレームを記録
     if (!this.currentChatFrame) {
-      console.log("[ChatHelper] 新しいチャットフレームを検出しました。");
       this.currentChatFrame = chatFrame;
     }
 
     // iframe要素に直接フラグをチェック（最も信頼できる方法）
     if (chatFrame.dataset.chatHelperInitialized === "true") {
-      console.log("[ChatHelper] このiframeは既に初期化済みです。スキップします。");
       return; // 既に初期化済み
     }
 
     if (!chatFrame.dataset.chatHelperListenerAdded) {
       chatFrame.addEventListener("load", () => {
-        console.log("[ChatHelper] iframeがリロードされました。再初期化します。");
         // リロード時にフラグをクリア
         delete chatFrame.dataset.chatHelperInitialized;
         this.initialized = false;
@@ -2570,12 +2567,10 @@ const ChatHelper = {
 
     try {
       if (chatFrame.contentDocument?.readyState === "complete") {
-        console.log("[ChatHelper] iframeの準備ができました。初期化を開始します。");
         this.initializeFrame(chatFrame);
       }
     } catch (e) {
       // クロスオリジンの場合、loadイベントを待つ
-      console.log("チャットフレームのloadイベントを待機中...");
     }
   },
 
