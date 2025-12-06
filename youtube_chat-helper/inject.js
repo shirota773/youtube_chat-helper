@@ -1396,9 +1396,6 @@ const UI = {
       const channelInfo = Utils.getChannelInfo();
       const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
 
-      // チャンネルIDデバッグ表示
-      console.log(`[CH_ID] ${channelInfo?.name || 'なし'} | G:${templates.global.length} C:${templates.channel.length}`);
-
       // グローバルテンプレートボタン
       templates.global.forEach((entry, idx) => {
         const btn = this.createTemplateButton(entry, idx, GLOBAL_CHANNEL_KEY, iframe, true);
@@ -1432,7 +1429,6 @@ const UI = {
 
       // スタンプが追加された後、CCPPPのemojiMapを再構築
       if (CCPPP.enabled) {
-        console.log("[ChatHelper] setupChatButtons: CCPPPのemojiMapを再構築します");
         await new Promise(resolve => setTimeout(resolve, 500)); // スタンプが完全に読み込まれるまで待つ
         CCPPP.buildEmojiMap(iframe);
       }
@@ -2438,15 +2434,12 @@ const ChatHelper = {
     };
 
     // 親ページから初期化されるのを少し待つ（all_frames:true のため、親ページと iframe 内の両方で実行される）
-    console.log("[ChatHelper] iframe内で実行中。親ページからの初期化を確認します...");
     setTimeout(() => {
       // 既にボタンが存在するかチェック（親ページから初期化済み）
       const existingButtons = document.querySelector("#chat-helper-buttons");
       if (existingButtons) {
-        console.log("[ChatHelper] 親ページから既に初期化されています。自己初期化をスキップします。");
         // ただし、CCPPPが未初期化の場合は初期化する
         if (CCPPP.enabled && !CCPPP.iframeData.has(pseudoIframe)) {
-          console.log("[ChatHelper] CCPPPを初期化します（iframe内）");
           // スタンプが読み込まれるまで待つ
           setTimeout(() => {
             CCPPP.init(pseudoIframe);
@@ -2454,8 +2447,6 @@ const ChatHelper = {
         }
         return;
       }
-
-      console.log("[ChatHelper] 親ページから初期化されていません。自己初期化を開始します。");
       try {
         UI.addStyles(pseudoIframe);
         UI.setupChatButtons(pseudoIframe);
@@ -2520,11 +2511,12 @@ const ChatHelper = {
 
   checkForChatFrameYouTube() {
     // YouTube用
+    // 注意: YouTubeの場合、iframe内での自己初期化（initializeCurrentFrame）に依存します
+    // 親ページからはiframeを初期化しません（ytInitialDataはiframe内にのみ存在するため）
     const chatFrame = document.querySelector("iframe#chatframe");
     if (!chatFrame) {
       // iframe が消えた場合、状態をリセット
       if (this.currentChatFrame) {
-        console.log("[ChatHelper] チャットフレームが消えました。状態をリセットします。");
         this.currentChatFrame = null;
         this.initialized = false;
         StampLoader.loaded = false;
@@ -2535,12 +2527,10 @@ const ChatHelper = {
 
     // iframe が新しくなった場合（再生成された場合）
     if (this.currentChatFrame && this.currentChatFrame !== chatFrame) {
-      console.log("[ChatHelper] チャットフレームが再生成されました。状態をリセットします。");
       this.initialized = false;
       StampLoader.loaded = false;
       UI.isSettingUpButtons = false;
       this.currentChatFrame = null;
-      // 古いiframeのフラグは無効なので、新しいiframeには設定されていない
     }
 
     // 現在のフレームを記録
@@ -2548,30 +2538,8 @@ const ChatHelper = {
       this.currentChatFrame = chatFrame;
     }
 
-    // iframe要素に直接フラグをチェック（最も信頼できる方法）
-    if (chatFrame.dataset.chatHelperInitialized === "true") {
-      return; // 既に初期化済み
-    }
-
-    if (!chatFrame.dataset.chatHelperListenerAdded) {
-      chatFrame.addEventListener("load", () => {
-        // リロード時にフラグをクリア
-        delete chatFrame.dataset.chatHelperInitialized;
-        this.initialized = false;
-        StampLoader.loaded = false;
-        UI.isSettingUpButtons = false;
-        this.initializeFrame(chatFrame);
-      });
-      chatFrame.dataset.chatHelperListenerAdded = "true";
-    }
-
-    try {
-      if (chatFrame.contentDocument?.readyState === "complete") {
-        this.initializeFrame(chatFrame);
-      }
-    } catch (e) {
-      // クロスオリジンの場合、loadイベントを待つ
-    }
+    // YouTubeの場合、iframe内での自己初期化に任せる
+    // 親ページからの初期化は行わない
   },
 
   checkForChatFrameHolodex() {
