@@ -2752,6 +2752,46 @@ window.ChatHelperUtils = {
     }
   },
 
+  // 古いVideo_*形式のチャンネルデータを削除
+  async clearOldVideoIdChannels() {
+    try {
+      const data = await ChromeStorageHelper.get(STORAGE_KEY) || { channels: [], global: [] };
+
+      // Video_* で始まるチャンネルを抽出
+      const oldChannels = data.channels.filter(ch => {
+        // メイン名またはエイリアスにVideo_が含まれるものを検出
+        const hasVideoId = ch.name.startsWith('Video_') ||
+                          (ch.aliases && ch.aliases.some(alias => alias.startsWith('Video_')));
+        return hasVideoId;
+      });
+
+      if (oldChannels.length === 0) {
+        console.log("%c[ChatHelper] Video_*形式のチャンネルは見つかりませんでした", "color: yellow; font-weight: bold;");
+        return true;
+      }
+
+      console.log("%c[ChatHelper] 以下の古いチャンネルを削除します:", "color: orange; font-weight: bold;");
+      oldChannels.forEach(ch => {
+        console.log(`  - ${ch.name} (エイリアス: ${ch.aliases ? ch.aliases.join(', ') : 'なし'}, テンプレート数: ${ch.data.length})`);
+      });
+
+      // Video_* で始まらないチャンネルのみ保持
+      data.channels = data.channels.filter(ch => {
+        const hasVideoId = ch.name.startsWith('Video_') ||
+                          (ch.aliases && ch.aliases.some(alias => alias.startsWith('Video_')));
+        return !hasVideoId;
+      });
+
+      await ChromeStorageHelper.set(STORAGE_KEY, data);
+      console.log(`%c[ChatHelper] ${oldChannels.length}個の古いチャンネルを削除しました`, "color: green; font-weight: bold;");
+      console.log("[ChatHelper] ページをリロードしてください (F5)");
+      return true;
+    } catch (e) {
+      console.error("[ChatHelper] 古いチャンネルの削除に失敗:", e);
+      return false;
+    }
+  },
+
   // 現在のチャンネル情報とテンプレートを表示
   async checkCurrentChannel() {
     try {
