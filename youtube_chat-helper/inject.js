@@ -2855,6 +2855,174 @@ window.ChatHelperUtils = {
     }
   },
 
+  // チャンネル情報の取得方法をデバッグ表示
+  debugChannelInfo() {
+    console.log("%c[ChatHelper] チャンネル情報の取得方法をデバッグします", "color: orange; font-weight: bold; font-size: 14px;");
+    console.log("");
+
+    const results = [];
+    const isInIframe = window.self !== window.top;
+    const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
+
+    console.log("環境情報:");
+    console.log("  isInIframe:", isInIframe);
+    console.log("  isYouTubeChatIframe:", isYouTubeChatIframe);
+    console.log("  現在のURL:", window.location.href);
+    console.log("  リファラー:", document.referrer);
+    console.log("");
+
+    // 方法1: チャンネル名の要素から取得
+    console.log("%c方法1: DOMからチャンネル名を取得", "color: cyan; font-weight: bold;");
+    const channelSelectors = [
+      "yt-live-chat-header-renderer #channel-name a",
+      "yt-live-chat-header-renderer yt-formatted-string a",
+      "#author-name a",
+      "yt-live-chat-header-renderer #chat-header-text a",
+      "#channel-name yt-formatted-string a",
+      "a[href*='/channel/']",
+      "a[href*='/@']"
+    ];
+
+    let method1Success = false;
+    for (const selector of channelSelectors) {
+      const element = document.querySelector(selector);
+      console.log(`  セレクタ: ${selector}`);
+      console.log(`    要素: ${element ? '見つかった' : '見つからない'}`);
+      if (element) {
+        console.log(`    innerText: "${element.innerText?.trim() || '(空)'}"`);
+        console.log(`    href: "${element.href || '(なし)'}"`);
+
+        if (element.innerText && element.innerText.trim()) {
+          results.push({
+            方法: "方法1 - DOM",
+            セレクタ: selector,
+            成功: "○",
+            チャンネル名: element.innerText.trim(),
+            URL: element.href || ""
+          });
+          method1Success = true;
+          break;
+        }
+      }
+    }
+    if (!method1Success) {
+      results.push({
+        方法: "方法1 - DOM",
+        セレクタ: "すべて失敗",
+        成功: "×",
+        チャンネル名: "",
+        URL: ""
+      });
+    }
+    console.log("");
+
+    // 方法2: iframe URLから動画IDを取得
+    console.log("%c方法2: iframe URLから動画IDを取得", "color: cyan; font-weight: bold;");
+    const urlParams = new URLSearchParams(window.location.search);
+    const iframeVideoId = urlParams.get('v');
+    console.log("  iframe URLの v パラメータ:", iframeVideoId || "(なし)");
+
+    if (iframeVideoId) {
+      results.push({
+        方法: "方法2 - iframe URL",
+        セレクタ: "URLパラメータ v",
+        成功: "○",
+        チャンネル名: `Video_${iframeVideoId}`,
+        URL: `https://www.youtube.com/watch?v=${iframeVideoId}`
+      });
+    } else {
+      results.push({
+        方法: "方法2 - iframe URL",
+        セレクタ: "URLパラメータ v",
+        成功: "×",
+        チャンネル名: "",
+        URL: ""
+      });
+    }
+    console.log("");
+
+    // 方法3: 親URLから動画IDを取得
+    console.log("%c方法3: 親URL (referrer) から動画IDを取得", "color: cyan; font-weight: bold;");
+    const parentUrl = document.referrer;
+    console.log("  親URL:", parentUrl || "(なし)");
+
+    if (parentUrl) {
+      // YouTube URL
+      const youtubeMatch = parentUrl.match(/[?&]v=([^&]+)/);
+      if (youtubeMatch) {
+        const parentVideoId = youtubeMatch[1];
+        console.log("  YouTube動画ID:", parentVideoId);
+        results.push({
+          方法: "方法3 - 親URL (YouTube)",
+          セレクタ: "referrer の v パラメータ",
+          成功: "○",
+          チャンネル名: `Video_${parentVideoId}`,
+          URL: `https://www.youtube.com/watch?v=${parentVideoId}`
+        });
+      } else {
+        console.log("  YouTube動画ID: (見つからない)");
+        results.push({
+          方法: "方法3 - 親URL (YouTube)",
+          セレクタ: "referrer の v パラメータ",
+          成功: "×",
+          チャンネル名: "",
+          URL: ""
+        });
+      }
+
+      // Holodex URL
+      if (parentUrl.includes("holodex.net")) {
+        const holodexMatch = parentUrl.match(/holodex\.net\/watch\/([^/?]+)/);
+        if (holodexMatch) {
+          const holodexVideoId = holodexMatch[1];
+          console.log("  Holodex動画ID:", holodexVideoId);
+          results.push({
+            方法: "方法3 - 親URL (Holodex特定)",
+            セレクタ: "holodex.net/watch/ID",
+            成功: "○",
+            チャンネル名: `Holodex_${holodexVideoId}`,
+            URL: parentUrl
+          });
+        } else {
+          console.log("  Holodex動画ID: (見つからない、汎用名使用)");
+          results.push({
+            方法: "方法3 - 親URL (Holodex汎用)",
+            セレクタ: "holodex.net (汎用)",
+            成功: "△",
+            チャンネル名: "Holodex_Chat",
+            URL: parentUrl
+          });
+        }
+      }
+    } else {
+      results.push({
+        方法: "方法3 - 親URL",
+        セレクタ: "referrer",
+        成功: "×",
+        チャンネル名: "",
+        URL: ""
+      });
+    }
+    console.log("");
+
+    // 現在の getChannelInfo() の結果
+    console.log("%c現在の getChannelInfo() の戻り値:", "color: lime; font-weight: bold;");
+    const currentResult = Utils.getChannelInfo();
+    console.log(currentResult);
+    console.log("");
+
+    // テーブル形式で結果を表示
+    console.log("%c全方法の結果まとめ:", "color: yellow; font-weight: bold; font-size: 14px;");
+    console.table(results);
+
+    console.log("");
+    console.log("%c推奨:", "color: orange; font-weight: bold;");
+    console.log("上記の結果を確認し、YouTube と Holodex の両方で同じ値が取得できる方法を選んでください。");
+    console.log("その後、その方法で統一するようフィードバックをお願いします。");
+
+    return results;
+  },
+
   // ヘルプを表示
   help() {
     console.log("%c[ChatHelper] 利用可能なコマンド:", "color: blue; font-weight: bold; font-size: 14px;");
@@ -2862,11 +3030,13 @@ window.ChatHelperUtils = {
     console.log("  ChatHelperUtils.clearGlobalTemplates()   - グローバルテンプレートのみ削除");
     console.log("  ChatHelperUtils.clearChannelTemplates('チャンネル名') - 特定チャンネルのテンプレートを削除");
     console.log("  ChatHelperUtils.showAllTemplates()       - 保存されているテンプレートを表示");
+    console.log("  ChatHelperUtils.debugChannelInfo()       - チャンネル情報の取得方法をデバッグ");
     console.log("  ChatHelperUtils.help()                   - このヘルプを表示");
     console.log("");
     console.log("%c使用例:", "color: green; font-weight: bold;");
     console.log("  ChatHelperUtils.clearAllTemplates()");
     console.log("  ChatHelperUtils.clearChannelTemplates('Video_6x6cYaz1kmE')");
+    console.log("  ChatHelperUtils.debugChannelInfo()");
   }
 };
 
