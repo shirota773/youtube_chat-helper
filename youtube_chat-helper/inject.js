@@ -2790,6 +2790,74 @@ window.ChatHelperUtils = {
     console.log("  リファラー:", document.referrer);
     console.log("");
 
+    // チャンネルIDを取得できるDOM要素を探す
+    console.log("%cチャンネルID取得の試行:", "color: magenta; font-weight: bold;");
+    const channelIdSelectors = [
+      { name: "channel link href", selector: "a[href*='/channel/']", attr: "href" },
+      { name: "channel link @", selector: "a[href*='/@']", attr: "href" },
+      { name: "yt-live-chat-header owner", selector: "yt-live-chat-header-renderer a[href*='/channel/'], yt-live-chat-header-renderer a[href*='/@']", attr: "href" },
+      { name: "author-photo", selector: "#author-photo a", attr: "href" },
+      { name: "chat-header a", selector: "yt-live-chat-header-renderer a", attr: "href" }
+    ];
+
+    let channelIdFromDOM = null;
+    let channelHandleFromDOM = null;
+    for (const {name, selector, attr} of channelIdSelectors) {
+      const element = document.querySelector(selector);
+      console.log(`  ${name}: ${selector}`);
+      if (element) {
+        const value = element[attr];
+        console.log(`    見つかった: ${value}`);
+
+        // /channel/UC... 形式から抽出
+        const channelMatch = value?.match(/\/channel\/(UC[^/?]+)/);
+        if (channelMatch) {
+          channelIdFromDOM = channelMatch[1];
+          console.log(`    ✓ チャンネルID抽出成功: ${channelIdFromDOM}`);
+          results.push({
+            方法: "DOM - チャンネルID",
+            セレクタ: name,
+            成功: "○",
+            取得値: channelIdFromDOM,
+            形式: "UC..."
+          });
+          break;
+        }
+
+        // /@username 形式
+        const handleMatch = value?.match(/\/@([^/?]+)/);
+        if (handleMatch && !channelHandleFromDOM) {
+          channelHandleFromDOM = handleMatch[1];
+          console.log(`    △ ハンドル取得: @${channelHandleFromDOM} (チャンネルIDではない)`);
+        }
+      } else {
+        console.log(`    見つからない`);
+      }
+    }
+
+    if (channelIdFromDOM) {
+      console.log(`  ✓ 最終結果: チャンネルID = ${channelIdFromDOM}`);
+    } else if (channelHandleFromDOM) {
+      console.log(`  △ 最終結果: ハンドル = @${channelHandleFromDOM} (チャンネルIDは取得できず)`);
+      results.push({
+        方法: "DOM - ハンドル",
+        セレクタ: "a[href*='/@']",
+        成功: "△",
+        取得値: `@${channelHandleFromDOM}`,
+        形式: "@username"
+      });
+    } else {
+      console.log("  ✗ チャンネルIDを取得できませんでした");
+      results.push({
+        方法: "DOM - チャンネルID",
+        セレクタ: "すべて失敗",
+        成功: "×",
+        取得値: "",
+        形式: ""
+      });
+    }
+    console.log("");
+
     // 方法1: チャンネル名の要素から取得
     console.log("%c方法1: DOMからチャンネル名を取得", "color: cyan; font-weight: bold;");
     const channelSelectors = [
@@ -2935,9 +3003,28 @@ window.ChatHelperUtils = {
     console.table(results);
 
     console.log("");
+    console.log("%c重要な違い:", "color: red; font-weight: bold; font-size: 14px;");
+    console.log("動画ID (Video ID): 個別の配信/動画を識別 (例: 6x6cYaz1kmE)");
+    console.log("チャンネルID (Channel ID): チャンネルを識別 (例: UC... 形式)");
+    console.log("");
+    console.log("%c現在の動作:", "color: yellow; font-weight: bold;");
+    console.log("✓ 動画ID: YouTube/Holodex両方で取得可能（統一済み）");
+    console.log("? チャンネルID: DOMから取得できるか環境依存");
+    console.log("");
+    console.log("%cチャンネルIDの取得方法:", "color: cyan; font-weight: bold;");
+    console.log("方法A: DOMから抽出（上記で試行済み）");
+    console.log("  ✓ API不要、軽量");
+    console.log("  × 環境により要素が存在しない可能性");
+    console.log("");
+    console.log("方法B: 動画IDからYouTube Data APIで取得");
+    console.log("  ✓ 確実に取得可能");
+    console.log("  × APIキーが必要、リクエスト制限あり");
+    console.log("  例: https://www.googleapis.com/youtube/v3/videos?id={videoId}&key={apiKey}&part=snippet");
+    console.log("");
     console.log("%c推奨:", "color: orange; font-weight: bold;");
-    console.log("上記の結果を確認し、YouTube と Holodex の両方で同じ値が取得できる方法を選んでください。");
-    console.log("その後、その方法で統一するようフィードバックをお願いします。");
+    console.log("1. まずDOMからチャンネルIDが取得できるか確認（上記結果を参照）");
+    console.log("2. YouTube/Holodex両方でチャンネルIDが取得できれば、それを使用");
+    console.log("3. 取得できない場合は、動画ID使用 or YouTube Data API実装を検討");
 
     return results;
   },
