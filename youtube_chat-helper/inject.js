@@ -755,22 +755,15 @@ const CCPPP = {
   retryDelay: 2000, // リトライ間隔（ミリ秒）
 
   init(iframe) {
-    console.log("CCPPP: 初期化を開始します");
     this.enabled = Settings.get().ccpppEnabled;
     if (!this.enabled) {
-      console.warn("CCPPP: 機能が無効化されています（設定で無効）");
       return;
     }
-    console.log("CCPPP: 機能は有効です");
 
-    // iframe.contentDocument が null の場合は初期化をスキップ
     if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping init");
       return;
     }
-    console.log("CCPPP: iframe.contentDocument が有効です");
 
-    // このiframe用のデータを初期化
     if (!this.iframeData.has(iframe)) {
       this.iframeData.set(iframe, {
         emojiMap: new Map(),
@@ -780,42 +773,32 @@ const CCPPP = {
 
     this.buildEmojiMap(iframe);
     this.setupPasteListener(iframe);
-    console.log("CCPPP: 初期化完了！");
   },
 
   buildEmojiMap(iframe) {
-    console.log("CCPPP: スタンプマップの構築を開始します");
     if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping buildEmojiMap");
       return;
     }
 
-    // iframeData が存在しない場合は初期化
     if (!this.iframeData.has(iframe)) {
-      console.log("CCPPP: iframe データを初期化します");
       this.iframeData.set(iframe, {
         emojiMap: new Map(),
         setupRetryCount: 0
       });
     }
 
-    // すべてのタブをクリックしてスタンプをロード（メンバーシップスタンプを含む）
     const categoryButtons = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
       "yt-live-chat-emoji-picker-category-buttons button, #picker-tabs button"
     );
 
     if (categoryButtons.length > 0) {
-      console.log(`CCPPP: ${categoryButtons.length} 個のカテゴリタブを検出しました`);
-      // 各タブをクリックしてスタンプをロード
       categoryButtons.forEach((button, index) => {
         setTimeout(() => {
-          console.log(`CCPPP: タブ ${index + 1}/${categoryButtons.length} をクリック`);
           button.click();
-        }, index * 100); // 各クリックの間に100ms待つ
+        }, index * 100);
       });
 
-      // すべてのタブをクリックした後、スタンプを収集
       setTimeout(() => {
         this.collectEmojisFromDOM(iframe);
       }, categoryButtons.length * 100 + 500);
@@ -827,7 +810,6 @@ const CCPPP = {
   collectEmojisFromDOM(iframe) {
     const data = this.iframeData.get(iframe);
     if (!data) {
-      console.warn("CCPPP: iframe データが見つかりません");
       return;
     }
 
@@ -846,25 +828,15 @@ const CCPPP = {
   },
 
   setupPasteListener(iframe) {
-
-    // iframeとcontentDocumentの有効性をチェック
-    if (!iframe) {
-      console.warn("CCPPP: iframe is null or undefined, skipping setupPasteListener");
-      return;
-    }
-
-    if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping setupPasteListener");
+    if (!iframe || !iframe.contentDocument) {
       return;
     }
 
     const data = this.iframeData.get(iframe);
     if (!data) {
-      console.warn("CCPPP: iframe データが見つかりません");
       return;
     }
 
-    // 複数のセレクタを試す
     const selectors = [
       "yt-live-chat-text-input-field-renderer#input #input",
       "yt-live-chat-text-input-field-renderer#input div[contenteditable]",
@@ -873,97 +845,58 @@ const CCPPP = {
     ];
 
     let inputField = null;
-    let usedSelector = null;
 
     for (const selector of selectors) {
       inputField = Utils.safeQuerySelector(iframe.contentDocument, selector);
       if (inputField) {
-        usedSelector = selector;
-        console.log(`CCPPP: 入力欄を取得しました (セレクタ: ${selector}):`, inputField);
         break;
       }
     }
 
     if (!inputField) {
-      console.error("CCPPP: 入力欄が見つかりません");
-      console.log("CCPPP: 試したセレクタ:", selectors);
-
-      // デバッグ情報を出力
-      if (iframe.contentDocument) {
-        const inputPanel = Utils.safeQuerySelector(iframe.contentDocument, "#input-panel");
-        console.log("CCPPP: #input-panel の存在:", !!inputPanel);
-        const textInputRenderer = Utils.safeQuerySelector(iframe.contentDocument, "yt-live-chat-text-input-field-renderer");
-        console.log("CCPPP: yt-live-chat-text-input-field-renderer の存在:", !!textInputRenderer);
-        console.log("CCPPP: iframe URL:", iframe.contentWindow?.location?.href || "不明");
-      }
-
-      // リトライ回数をチェック
       if (data.setupRetryCount < this.maxSetupRetries) {
         data.setupRetryCount++;
-        console.log(`CCPPP: ${this.retryDelay}ms 後にリトライします... (${data.setupRetryCount}/${this.maxSetupRetries})`);
-
-        // リトライ（iframeの有効性を再確認）
         setTimeout(() => {
-          console.log("CCPPP: リトライ中...");
-          // iframeがまだ有効かチェック
           if (iframe && iframe.contentDocument) {
             this.setupPasteListener(iframe);
           } else {
-            console.warn("CCPPP: リトライ時にiframeが無効になっています");
-            data.setupRetryCount = 0; // カウンターをリセット
+            data.setupRetryCount = 0;
           }
         }, this.retryDelay);
       } else {
-        console.warn(`CCPPP: 最大リトライ回数(${this.maxSetupRetries})に達しました。ペーストリスナーのセットアップを中止します。`);
-        console.warn("CCPPP: emojiMap は利用可能ですが、ペースト機能は動作しません。");
-        data.setupRetryCount = 0; // カウンターをリセット
+        data.setupRetryCount = 0;
       }
       return;
     }
-    console.log("CCPPP: 入力欄を取得しました:", inputField);
 
-    // 成功したのでリトライカウンターをリセット
     data.setupRetryCount = 0;
 
-    // 既にリスナーが設定されているかチェック
     if (inputField._ccpppListenerAttached) {
-      console.log("CCPPP: このinputFieldには既にリスナーが設定されています。スキップします。");
       return;
     }
 
-    // 既存のリスナーを削除（念のため）
     if (inputField._ccpppPasteHandler) {
       inputField.removeEventListener("paste", inputField._ccpppPasteHandler, true);
       inputField.removeEventListener("paste", inputField._ccpppPasteHandler, false);
-      console.log("CCPPP: 既存のペーストリスナーを削除しました");
     }
 
-    // ペーストイベントハンドラーを作成
     const handler = (event) => {
       this.handlePaste(event, iframe);
     };
 
-    // inputFieldに直接ハンドラーを保存
     inputField._ccpppPasteHandler = handler;
     inputField._ccpppListenerAttached = true;
-
-    // キャプチャフェーズで処理（他のリスナーより先に実行）
     inputField.addEventListener("paste", handler, true);
-    console.log("%cCCPPP: ペーストイベントリスナーを設定しました（キャプチャフェーズ）！", "color: green; font-weight: bold;");
-    console.log("CCPPP: この入力欄にCtrl+Vでペーストすると、スタンプ変換が実行されます");
   },
 
   handlePaste(event, iframe) {
-    console.log("%c━━━ CCPPP: handlePaste 開始 ━━━", "color: orange; font-weight: bold;");
 
     if (!this.enabled) {
-      console.log("CCPPP: 機能が無効化されています");
       return;
     }
 
     // 処理中フラグをチェック（重複実行を防ぐ）
     if (this.isProcessing) {
-      console.warn("%cCCPPP: 既に処理中です。このイベントをスキップします。", "color: red; font-weight: bold;");
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -971,24 +904,19 @@ const CCPPP = {
 
     const data = this.iframeData.get(iframe);
     if (!data || !data.emojiMap) {
-      console.warn("CCPPP: iframe データまたは emojiMap が見つかりません");
       return;
     }
 
     try {
       this.isProcessing = true;
 
-      console.log("CCPPP: ペーストイベントを検出しました");
 
       // クリップボードからテキストを取得
       const pastedText = event.clipboardData?.getData("text");
       if (!pastedText) {
-        console.log("CCPPP: クリップボードにテキストがありません");
         return;
       }
 
-      console.log("CCPPP: ペーストされたテキスト:", pastedText);
-      console.log("CCPPP: 現在のemojiMapサイズ:", data.emojiMap.size);
 
       // スタンプ名を検出（コロンなし、YouTubeの仕様に対応）
       // テキストを左から順番に走査して、最長一致でスタンプを検出
@@ -997,7 +925,6 @@ const CCPPP = {
       // 長い名前から順にソート（最長一致を優先）
       stampNames.sort((a, b) => b.length - a.length);
 
-      console.log("CCPPP: 登録されているスタンプ名の例:", stampNames.slice(0, 10));
 
       // テキストを解析してスタンプの位置を特定
       const tokens = []; // { type: 'text' | 'stamp', value: string, position: number }
@@ -1009,7 +936,6 @@ const CCPPP = {
         // 現在位置から最長一致するスタンプ名を探す
         for (const stampName of stampNames) {
           if (pastedText.substring(currentPos).startsWith(stampName)) {
-            console.log(`CCPPP: ✓ 位置${currentPos}で "${stampName}" を検出`);
             tokens.push({ type: 'stamp', value: stampName, position: currentPos });
             currentPos += stampName.length;
             matched = true;
@@ -1043,23 +969,19 @@ const CCPPP = {
         }
       }
 
-      console.log("CCPPP: 解析結果:", tokens);
 
       // スタンプが1つでも含まれている場合は、カスタム処理を実行
       const stampTokens = tokens.filter(t => t.type === 'stamp');
 
       if (stampTokens.length > 0) {
-        console.log(`%cCCPPP: ${stampTokens.length} 個のスタンプを検出しました`, "color: green; font-weight: bold;", stampTokens.map(t => t.value));
 
         // デフォルトのペースト動作をキャンセル（最初に実行）
         event.preventDefault();
         event.stopPropagation();
-        console.log("CCPPP: デフォルトのペースト動作をキャンセルしました");
 
         // トークンに基づいてスタンプとテキストを挿入
         this.insertTokens(tokens, iframe);
       } else {
-        console.log("CCPPP: スタンプが見つからなかったため、通常のペーストを実行します");
       }
     } finally {
       // 処理完了後、フラグをクリア
@@ -1068,13 +990,9 @@ const CCPPP = {
   },
 
   insertTokens(tokens, iframe) {
-    console.log("CCPPP: insertTokens を開始します");
-    console.log("CCPPP: トークン数:", tokens.length);
-    console.log("CCPPP: トークン詳細:", tokens.map(t => `[${t.type}] "${t.value}"`).join(" → "));
 
     // iframe.contentDocument の有効性をチェック
     if (!iframe || !iframe.contentDocument) {
-      console.error("CCPPP: iframe または iframe.contentDocument が無効です");
       return;
     }
 
@@ -1084,7 +1002,6 @@ const CCPPP = {
     );
 
     if (!inputPanel) {
-      console.error("CCPPP: input-panelが見つかりません");
       return;
     }
 
@@ -1094,7 +1011,6 @@ const CCPPP = {
     );
 
     if (!categories) {
-      console.error("CCPPP: カテゴリが見つかりません");
       return;
     }
 
@@ -1104,11 +1020,9 @@ const CCPPP = {
     );
 
     if (!inputField) {
-      console.error("CCPPP: 入力欄が見つかりません");
       return;
     }
 
-    console.log("CCPPP: 入力欄の現在の内容:", inputField.textContent);
 
     let insertCount = 0;
     let tokenIndex = 0;
@@ -1116,47 +1030,34 @@ const CCPPP = {
     // トークンを順番に処理（insertTemplateと同じ方式）
     for (const token of tokens) {
       tokenIndex++;
-      console.log(`%cCCPPP: [${tokenIndex}/${tokens.length}] 処理中: ${token.type} = "${token.value}"`, "color: purple;");
 
       if (token.type === 'text') {
-        console.log(`CCPPP: テキストを挿入: "${token.value}"`);
 
         // insertTextメソッドを使用（insertTemplateと同じ）
         if (inputField.insertText) {
           inputField.insertText(token.value);
         } else {
-          console.warn("CCPPP: insertTextメソッドが利用できません");
         }
 
-        console.log(`CCPPP: テキスト挿入後の入力欄内容:`, inputField.textContent);
       } else if (token.type === 'stamp') {
         const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${token.value}"]`);
         if (emojiBtn) {
-          console.log(`%cCCPPP: スタンプをクリック: ${token.value}`, "color: blue; font-weight: bold;");
 
           // insertTemplateと同じ方式でクリック
           emojiBtn.click();
 
           insertCount++;
-          console.log(`CCPPP: スタンプクリック完了後の入力欄内容:`, inputField.textContent);
         } else {
-          console.warn(`CCPPP: スタンプボタンが見つかりません: ${token.value}`);
         }
       }
     }
 
-    console.log(`%cCCPPP: 挿入処理完了！合計 ${insertCount} 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
-    console.log("CCPPP: 最終的な入力欄内容:", inputField.textContent);
   },
 
   insertEmojis(emojiNames, originalText, iframe) {
-    console.log("CCPPP: insertEmojis を開始します");
-    console.log("CCPPP: 挿入対象のテキスト:", originalText);
-    console.log("CCPPP: 検出されたスタンプ名:", emojiNames);
 
     // iframe.contentDocument の有効性をチェック
     if (!iframe || !iframe.contentDocument) {
-      console.error("CCPPP: iframe または iframe.contentDocument が無効です");
       return;
     }
 
@@ -1166,10 +1067,8 @@ const CCPPP = {
     );
 
     if (!categories) {
-      console.error("CCPPP: カテゴリが見つかりません");
       return;
     }
-    console.log("CCPPP: カテゴリ要素を取得しました");
 
     const inputField = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -1177,23 +1076,17 @@ const CCPPP = {
     );
 
     if (!inputField) {
-      console.error("CCPPP: 入力欄が見つかりません");
       return;
     }
-    console.log("CCPPP: 入力欄を取得しました");
 
     // スタンプ名が1つだけで、テキスト全体と完全一致する場合
     if (emojiNames.length === 1 && originalText === emojiNames[0]) {
       const emojiName = emojiNames[0];
-      console.log(`CCPPP: テキスト全体がスタンプ名と一致: ${emojiName}`);
 
       const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
       if (emojiBtn) {
-        console.log(`%cCCPPP: スタンプをクリック: ${emojiName}`, "color: blue; font-weight: bold;");
         emojiBtn.click();
-        console.log(`%cCCPPP: 挿入処理完了！1 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
       } else {
-        console.warn(`CCPPP: スタンプボタンが見つかりません: ${emojiName}`);
         // スタンプが見つからない場合は、元のテキストを挿入
         if (inputField.insertText) {
           inputField.insertText(originalText);
@@ -1220,14 +1113,12 @@ const CCPPP = {
     }
     stampPositions.sort((a, b) => a.index - b.index);
 
-    console.log("CCPPP: スタンプの出現順:", stampPositions);
 
     let lastIndex = 0;
     for (const { name: emojiName, index } of stampPositions) {
       // スタンプの前のテキストを挿入
       if (index > lastIndex) {
         const textBefore = remainingText.slice(lastIndex, index);
-        console.log(`CCPPP: テキストを挿入: "${textBefore}"`);
         if (inputField.insertText) {
           inputField.insertText(textBefore);
         } else {
@@ -1239,12 +1130,9 @@ const CCPPP = {
       // スタンプを挿入
       const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
       if (emojiBtn) {
-        console.log(`%cCCPPP: スタンプをクリック: ${emojiName}`, "color: blue; font-weight: bold;");
         emojiBtn.click();
         insertCount++;
-        console.log(`CCPPP: スタンプクリック完了 (${insertCount}個目)`);
       } else {
-        console.warn(`CCPPP: スタンプボタンが見つかりません: ${emojiName}`);
         // スタンプが見つからない場合は、元のテキストを挿入
         if (inputField.insertText) {
           inputField.insertText(emojiName);
@@ -1260,7 +1148,6 @@ const CCPPP = {
     // 残りのテキストを挿入
     if (lastIndex < remainingText.length) {
       const textAfter = remainingText.slice(lastIndex);
-      console.log(`CCPPP: 残りのテキストを挿入: "${textAfter}"`);
       if (inputField.insertText) {
         inputField.insertText(textAfter);
       } else {
@@ -1269,7 +1156,6 @@ const CCPPP = {
       }
     }
 
-    console.log(`%cCCPPP: 挿入処理完了！合計 ${insertCount} 個のスタンプをクリックしました`, "color: green; font-weight: bold;");
   },
 
   toggle(enabled) {
@@ -1499,7 +1385,6 @@ const UI = {
     } finally {
       // Always clear the guard flag
       this.isSettingUpButtons = false;
-      console.log("[ChatHelper] setupChatButtons: 完了（フラグをクリア）");
     }
   },
 
@@ -1602,7 +1487,6 @@ const UI = {
   showAliasInputDialog(event, template, channelName, index, iframe) {
     // テンプレートが存在しない場合は処理を中止
     if (!template) {
-      console.error("CCPPP: テンプレートが見つかりません");
       return;
     }
 
