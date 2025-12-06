@@ -820,51 +820,32 @@ const CCPPP = {
         this.collectEmojisFromDOM(iframe);
       }, categoryButtons.length * 100 + 500);
     } else {
-      console.log("CCPPP: カテゴリタブが見つかりませんでした。直接スタンプを収集します");
       this.collectEmojisFromDOM(iframe);
     }
   },
 
   collectEmojisFromDOM(iframe) {
-    console.log("CCPPP: DOMからスタンプを収集します");
-
     const data = this.iframeData.get(iframe);
     if (!data) {
-      console.warn("CCPPP: iframe データが見つかりません（初期化後）");
+      console.warn("CCPPP: iframe データが見つかりません");
       return;
     }
 
-    // より広範なセレクタを使用してすべてのタブのスタンプを取得
-    // メンバーシップスタンプを含むすべてのスタンプを取得
     const emojis = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
       "tp-yt-iron-pages img[alt], yt-live-chat-emoji-picker-renderer img[alt], #picker img[alt]"
     );
 
-    console.log(`CCPPP: ${emojis.length} 個のスタンプ要素を見つけました`);
-
-    // 既存のマップをクリア
     data.emojiMap.clear();
 
-    emojis.forEach((emoji, index) => {
+    emojis.forEach((emoji) => {
       if (emoji.alt) {
         data.emojiMap.set(emoji.alt, emoji.src);
-        if (index < 10) {
-          // 最初の10個だけログに出力
-          console.log(`CCPPP: スタンプ登録: ${emoji.alt}`);
-        }
       }
     });
-
-    console.log(`%cCCPPP: ${data.emojiMap.size} 個のスタンプをマップに登録しました`, "color: green; font-weight: bold;");
-
-    // 登録されたスタンプ名の一部を表示（デバッグ用）
-    const sampleNames = Array.from(data.emojiMap.keys()).slice(0, 10);
-    console.log("CCPPP: 登録されたスタンプ名の例:", sampleNames);
   },
 
   setupPasteListener(iframe) {
-    console.log("CCPPP: ペーストリスナーのセットアップを開始します");
 
     // iframeとcontentDocumentの有効性をチェック
     if (!iframe) {
@@ -1409,7 +1390,6 @@ const UI = {
   async setupChatButtons(iframe) {
     // Guard against concurrent calls
     if (this.isSettingUpButtons) {
-      console.log("[ChatHelper] setupChatButtons: 既に実行中のためスキップ");
       return;
     }
 
@@ -1417,19 +1397,15 @@ const UI = {
       this.isSettingUpButtons = true;
       this.currentIframe = iframe;
 
-      // iframe.contentDocument が null の場合は早期リターン
       if (!iframe.contentDocument) {
-        console.log("[ChatHelper] setupChatButtons: iframe.contentDocument is null");
         return;
       }
 
-      /* emoji load */
       const emojiButton = Utils.safeQuerySelector(
         iframe.contentDocument,
         "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
       );
       if (!emojiButton) {
-        console.log("[ChatHelper] setupChatButtons: emojiButton が見つかりません");
         return;
       }
 
@@ -1465,14 +1441,12 @@ const UI = {
         "#chat-messages #input-panel #container > #top"
       );
       if (!chatContainer) {
-        console.log("[ChatHelper] setupChatButtons: chatContainer が見つかりません");
         return;
       }
 
       // Remove ALL existing wrappers (in case there are multiple)
       const existingWrappers = Utils.safeQuerySelectorAll(iframe.contentDocument, "#chat-helper-buttons");
       if (existingWrappers.length > 0) {
-        console.log(`[ChatHelper] setupChatButtons: 既存のボタンを ${existingWrappers.length} 個削除します`);
         existingWrappers.forEach(wrapper => wrapper.remove());
       }
 
@@ -1481,6 +1455,9 @@ const UI = {
 
       const channelInfo = Utils.getChannelInfo();
       const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
+
+      // チャンネルIDデバッグ表示
+      console.log(`[CH_ID] ${channelInfo?.name || 'なし'} | G:${templates.global.length} C:${templates.channel.length}`);
 
       // グローバルテンプレートボタン
       templates.global.forEach((entry, idx) => {
@@ -1498,25 +1475,17 @@ const UI = {
 
       // 保存ボタン（チャンネル用）
       const saveButton = this.createButton("save-channel-btn", "Save", () => {
-        console.log("[ChatHelper] Save ボタンがクリックされました");
         const data = this.readChatInput(iframe);
-        console.log("[ChatHelper] readChatInput の結果:", data);
-
         if (data && data.length > 0) {
           const currentChannelInfo = Utils.getChannelInfo();
-          console.log("[ChatHelper] テンプレートを保存します。データ数:", data.length);
           Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
-            console.log("[ChatHelper] テンプレートを保存しました。ボタンを再構築します。");
             this.setupChatButtons(iframe);
           });
-        } else {
-          console.warn("[ChatHelper] データが空です。テンプレートを保存できません。");
         }
       }, "save-btn");
       buttonWrapper.appendChild(saveButton);
 
       chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
-      console.log("[ChatHelper] setupChatButtons: ボタンを挿入しました");
 
       // ドラッグ＆ドロップを設定
       this.setupButtonDragAndDrop(iframe);
@@ -2717,69 +2686,40 @@ const ChatHelper = {
     }
 
     if (chatFrames.length === 0) {
-      console.log("Holodex: チャットフレームが見つかりません");
       return;
     }
-
-    console.log(`Holodex: ${chatFrames.length} 個のチャットフレームを検出`);
-    console.log("Holodex: iframe内で自己初期化が実行されます（クロスオリジン制約のため親ページからは初期化不可）");
-
-    // クロスオリジンの場合、親ページからiframe内を初期化することはできません
-    // 代わりに、all_frames:trueにより、iframe内でスクリプトが実行され、
-    // initializeCurrentFrame()によって自己初期化されます
   },
 
   initializeFrameSafe(iframe, frameId) {
-    console.log(`initializeFrameSafe: ${frameId} の初期化開始`);
-
-    // フレームを初期化（戻り値で成功/失敗を判定）
     const success = this.initializeFrame(iframe);
 
     if (success) {
-      // 初期化成功時のみマークを付ける
       iframe.dataset.chatHelperInitialized = "true";
-      console.log(`initializeFrameSafe: ${frameId} の初期化成功、マークを設定`);
-    } else {
-      console.warn(`initializeFrameSafe: ${frameId} の初期化失敗`);
     }
   },
 
   initializeFrame(iframe) {
-    console.log("initializeFrame: チャットフレームを初期化中...");
-
-    // iframe.contentDocument が null の場合は初期化をスキップ
     if (!iframe.contentDocument) {
-      console.warn("initializeFrame: iframe.contentDocument is null, cannot initialize frame");
       this.initialized = false;
-      return false; // 失敗を返す
+      return false;
     }
-
-    console.log("initializeFrame: iframe.contentDocument が有効です");
 
     try {
       this.initialized = true;
 
-      console.log("initializeFrame: UI.addStyles を呼び出し");
       UI.addStyles(iframe);
-
-      console.log("initializeFrame: UI.setupChatButtons を呼び出し");
       UI.setupChatButtons(iframe);
-
-      console.log("initializeFrame: StampLoader.autoLoadStamps を呼び出し");
       StampLoader.autoLoadStamps(iframe);
 
-      // iframe要素に初期化完了フラグを設定（DOM要素の場合のみ）
       if (iframe.dataset) {
         iframe.dataset.chatHelperInitialized = "true";
-        console.log("initializeFrame: iframe に初期化完了フラグを設定しました");
       }
 
-      console.log("initializeFrame: YouTube Chat Helper の初期化完了！");
-      return true; // 成功を返す
+      return true;
     } catch (e) {
       console.error("initializeFrame: 初期化中にエラーが発生:", e);
       this.initialized = false;
-      return false; // 失敗を返す
+      return false;
     }
   }
 };
