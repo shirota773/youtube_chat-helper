@@ -2552,8 +2552,19 @@ const ChatHelper = {
       this.currentChatFrame = chatFrame;
     }
 
-    // YouTubeの場合、iframe内での自己初期化に任せる
-    // 親ページからの初期化は行わない
+    // iframe のリロードを検出するためのイベントリスナー
+    if (!chatFrame.dataset.chatHelperListenerAdded) {
+      chatFrame.addEventListener("load", () => {
+        // リロード時に状態をリセット（iframe内で自己初期化される）
+        this.initialized = false;
+        StampLoader.loaded = false;
+        UI.isSettingUpButtons = false;
+        // チャンネル情報のキャッシュもクリア
+        Utils.channelInfoCache = null;
+        Utils.channelInfoCacheTime = 0;
+      });
+      chatFrame.dataset.chatHelperListenerAdded = "true";
+    }
   },
 
   checkForChatFrameHolodex() {
