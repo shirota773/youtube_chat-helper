@@ -2414,16 +2414,19 @@ const ChatHelper = {
   currentChatFrame: null, // 現在のチャットフレームを追跡
 
   init() {
+    console.log("[ChatHelper] init: 開始", { url: window.location.href });
     // iframe内で実行されているかチェック
     const isInIframe = window.self !== window.top;
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
     if (isInIframe && isYouTubeChatIframe) {
+      console.log("[ChatHelper] init: YouTube chat iframe 内で実行");
       // iframe内のYouTubeチャット - 直接初期化
       this.initializeCurrentFrame();
       return;
     }
 
+    console.log("[ChatHelper] init: 親ページで実行");
     // 通常のページ（YouTube/Holodex）
     UI.addMainPageStyles();
     this.observeDOM();
@@ -2441,6 +2444,7 @@ const ChatHelper = {
   },
 
   initializeCurrentFrame() {
+    console.log("[ChatHelper] initializeCurrentFrame: 開始");
     // iframe要素の代わりに、windowオブジェクトを使用
     const pseudoIframe = {
       contentDocument: document,
@@ -2449,9 +2453,11 @@ const ChatHelper = {
 
     // 親ページから初期化されるのを少し待つ（all_frames:true のため、親ページと iframe 内の両方で実行される）
     setTimeout(() => {
+      console.log("[ChatHelper] initializeCurrentFrame: タイムアウト後の処理開始");
       // 既にボタンが存在するかチェック（親ページから初期化済み）
       const existingButtons = document.querySelector("#chat-helper-buttons");
       if (existingButtons) {
+        console.log("[ChatHelper] initializeCurrentFrame: ボタンが既に存在するためスキップ");
         // ただし、CCPPPが未初期化の場合は初期化する
         if (CCPPP.enabled && !CCPPP.iframeData.has(pseudoIframe)) {
           // スタンプが読み込まれるまで待つ
@@ -2461,6 +2467,7 @@ const ChatHelper = {
         }
         return;
       }
+      console.log("[ChatHelper] initializeCurrentFrame: 初期化を実行");
       try {
         UI.addStyles(pseudoIframe);
         UI.setupChatButtons(pseudoIframe);
@@ -2474,6 +2481,7 @@ const ChatHelper = {
             CCPPP.init(pseudoIframe);
           }
         });
+        console.log("[ChatHelper] initializeCurrentFrame: 初期化完了");
       } catch (e) {
         console.error("[ChatHelper] 初期化エラー:", e);
       }
@@ -2555,6 +2563,7 @@ const ChatHelper = {
     // iframe のリロードを検出するためのイベントリスナー
     if (!chatFrame.dataset.chatHelperListenerAdded) {
       chatFrame.addEventListener("load", () => {
+        console.log("[ChatHelper] iframe load イベント: リロード検出、状態リセット");
         // リロード時に状態をリセット（iframe内で自己初期化される）
         this.initialized = false;
         StampLoader.loaded = false;
@@ -2564,6 +2573,7 @@ const ChatHelper = {
         Utils.channelInfoCacheTime = 0;
       });
       chatFrame.dataset.chatHelperListenerAdded = "true";
+      console.log("[ChatHelper] iframe load リスナーを追加");
     }
   },
 
