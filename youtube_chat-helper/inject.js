@@ -1714,7 +1714,6 @@ const UI = {
             border-radius: 4px;
             z-index: 10000;
             min-width: 140px;
-            padding-top: 24px;
     `;
 
     // 閉じるボタン（右上、丸、border）
