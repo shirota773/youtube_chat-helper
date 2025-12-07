@@ -3357,20 +3357,87 @@ window.ChatHelperUtils = {
     return results;
   },
 
+  // 初期化状態を確認
+  checkInitStatus() {
+    console.log("%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "color: cyan; font-weight: bold;");
+    console.log("%c初期化状態の確認", "color: cyan; font-weight: bold; font-size: 14px;");
+    console.log("%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "color: cyan; font-weight: bold;");
+    console.log("");
+    console.log("【実行環境】");
+    console.log("  URL:", window.location.href);
+    console.log("  iframe内:", window.self !== window.top);
+    console.log("");
+    console.log("【初期化フラグ】");
+    console.log("  ChatHelper.initialized:", ChatHelper.initialized);
+    console.log("  StampLoader.loaded:", StampLoader.loaded);
+    console.log("  UI.isSettingUpButtons:", UI.isSettingUpButtons);
+    console.log("");
+    console.log("【DOM要素】");
+    const buttons = document.querySelector("#chat-helper-buttons");
+    console.log("  ボタンコンテナ:", buttons ? "存在する" : "存在しない");
+    if (buttons) {
+      const templateBtns = buttons.querySelectorAll("button.template-btn");
+      console.log("  テンプレートボタン数:", templateBtns.length);
+    }
+    console.log("");
+    console.log("【チャンネル情報】");
+    const channelInfo = Utils.getChannelInfo();
+    console.log("  識別子:", channelInfo?.name || "(なし)");
+    console.log("  URL:", channelInfo?.href || "(なし)");
+    console.log("  キャッシュ有効期限:", Utils.channelInfoCacheTime ? new Date(Utils.channelInfoCacheTime).toLocaleTimeString() : "(なし)");
+    console.log("");
+    console.log("%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "color: cyan; font-weight: bold;");
+  },
+
+  // 手動で初期化を実行
+  forceInit() {
+    console.log("%c[ChatHelper] 強制初期化を実行します", "color: orange; font-weight: bold;");
+
+    // フラグをリセット
+    ChatHelper.initialized = false;
+    StampLoader.loaded = false;
+    UI.isSettingUpButtons = false;
+    Utils.channelInfoCache = null;
+    Utils.channelInfoCacheTime = 0;
+
+    // 既存のボタンを削除
+    const existingButtons = document.querySelector("#chat-helper-buttons");
+    if (existingButtons) {
+      existingButtons.remove();
+      console.log("  既存のボタンを削除しました");
+    }
+
+    // iframe内かどうかチェック
+    const isInIframe = window.self !== window.top;
+    const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
+
+    if (isInIframe && isYouTubeChatIframe) {
+      console.log("  iframe内で初期化を実行");
+      ChatHelper.initializeCurrentFrame();
+    } else {
+      console.log("  親ページでは手動初期化できません（iframe内で実行してください）");
+    }
+  },
+
   // ヘルプを表示
   help() {
     console.log("%c[ChatHelper] 利用可能なコマンド:", "color: blue; font-weight: bold; font-size: 14px;");
     console.log("");
     console.log("%c【確認用】", "color: cyan; font-weight: bold;");
+    console.log("  ChatHelperUtils.checkInitStatus()        - ★★初期化状態を確認（推奨）");
     console.log("  ChatHelperUtils.testAllMethods()         - ★★全取得方法をテストして結果表示（デバッグ推奨）");
     console.log("  ChatHelperUtils.checkCurrentChannel()    - 現在のチャンネル情報とテンプレートを表示");
     console.log("  ChatHelperUtils.showAllTemplates()       - 保存されているテンプレートを表示");
     console.log("  ChatHelperUtils.debugChannelInfo()       - チャンネル情報の取得方法をデバッグ");
     console.log("");
+    console.log("%c【操作用】", "color: orange; font-weight: bold;");
+    console.log("  ChatHelperUtils.forceInit()              - ★★強制的に初期化を実行");
+    console.log("");
     console.log("%c【削除用】", "color: red; font-weight: bold;");
     console.log("  ChatHelperUtils.clearAllTemplates()      - すべてのテンプレートを削除");
     console.log("  ChatHelperUtils.clearGlobalTemplates()   - グローバルテンプレートのみ削除");
     console.log("  ChatHelperUtils.clearChannelTemplates('チャンネル名') - 特定チャンネルのテンプレートを削除");
+    console.log("  ChatHelperUtils.clearOldVideoIdChannels() - 古いVideo_*形式のチャンネルを削除");
     console.log("");
     console.log("  ChatHelperUtils.help()                   - このヘルプを表示");
     console.log("");
