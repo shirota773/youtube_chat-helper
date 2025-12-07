@@ -1474,65 +1474,8 @@ const UI = {
       wrapper.appendChild(newBtn);
     }
 
-    // 新しいボタンにドラッグ＆ドロップを設定
-    this.setupButtonDragAndDropForButton(newBtn, wrapper, iframe);
-  },
-
-  // 単一のボタンにドラッグ＆ドロップを設定
-  setupButtonDragAndDropForButton(btn, wrapper, iframe) {
-    let draggedBtn = null;
-
-    btn.addEventListener("dragstart", (e) => {
-      draggedBtn = btn;
-      btn.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      iframe.contentDocument.body.style.cursor = "grabbing";
-    });
-
-    btn.addEventListener("dragend", () => {
-      btn.classList.remove("dragging");
-      draggedBtn = null;
-      iframe.contentDocument.body.style.cursor = "";
-    });
-
-    btn.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      const currentDragged = wrapper.querySelector(".dragging");
-      if (!currentDragged || currentDragged === btn) return;
-
-      // 同じカテゴリ（グローバル/ローカル）のみ並び替え可能
-      if (currentDragged.dataset.isGlobal !== btn.dataset.isGlobal) return;
-
-      const rect = btn.getBoundingClientRect();
-      const midX = rect.left + rect.width / 2;
-
-      if (e.clientX < midX) {
-        wrapper.insertBefore(currentDragged, btn);
-      } else {
-        wrapper.insertBefore(currentDragged, btn.nextSibling);
-      }
-    });
-
-    btn.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const currentDragged = wrapper.querySelector(".dragging");
-      if (!currentDragged) return;
-
-      // 新しい順番を保存
-      const channelName = currentDragged.dataset.channelName;
-      const oldIndex = parseInt(currentDragged.dataset.index);
-      const isGlobal = currentDragged.dataset.isGlobal === "true";
-
-      // 同じカテゴリのボタンを取得して新しいインデックスを計算
-      const sameTypeButtons = Array.from(wrapper.querySelectorAll(`button.draggable[data-is-global="${isGlobal}"]`));
-      const newIndex = sameTypeButtons.indexOf(currentDragged);
-
-      if (oldIndex !== newIndex && newIndex >= 0) {
-        Storage.reorderTemplate(channelName, oldIndex, newIndex).then(() => {
-          this.setupChatButtons(iframe);
-        });
-      }
-    });
+    // 全体のドラッグ＆ドロップを再設定（新しいボタンも含めて）
+    this.setupButtonDragAndDrop(iframe);
   },
 
   setupButtonDragAndDrop(iframe) {
