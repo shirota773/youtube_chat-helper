@@ -1719,7 +1719,7 @@ const UI = {
     // 閉じるボタン（右上、丸、border）
     const closeBtn = document.createElement("div");
     closeBtn.textContent = "×";
-    closeBtn.style.cssText = "position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; line-height: 16px; text-align: center; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border: 1px solid #ccc; border-radius: 50%; background: white;";
+    closeBtn.style.cssText = "position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; line-height: 22px; text-align: center; cursor: pointer; font-size: 18px; font-weight: bold; color: #666; border: 1px solid #ccc; border-radius: 50%; background: white;";
     closeBtn.onmouseenter = () => { closeBtn.style.backgroundColor = "#f0f0f0"; closeBtn.style.color = "#000"; };
     closeBtn.onmouseleave = () => { closeBtn.style.backgroundColor = "white"; closeBtn.style.color = "#666"; };
     closeBtn.onclick = () => menu.remove();
