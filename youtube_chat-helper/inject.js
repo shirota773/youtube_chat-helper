@@ -2482,6 +2482,43 @@ const ChatHelper = {
           }
         });
         console.log("[ChatHelper] initializeCurrentFrame: 初期化完了");
+
+        // チャンネル情報とデータをログ出力
+        setTimeout(async () => {
+          try {
+            const channelInfo = Utils.getChannelInfo();
+            console.log("%c[ChatHelper] 検出されたチャンネル情報:", "color: lime; font-weight: bold;");
+            console.log("  識別子:", channelInfo?.name || "(なし)");
+            console.log("  URL:", channelInfo?.href || "(なし)");
+
+            const data = await ChromeStorageHelper.get(STORAGE_KEY);
+            if (channelInfo && channelInfo.name) {
+              const matchedChannel = data?.channels?.find(ch => {
+                if (!ch.aliases) ch.aliases = [ch.name];
+                return ch.aliases.includes(channelInfo.name);
+              });
+
+              if (matchedChannel) {
+                console.log("%c[ChatHelper] データ: あり", "color: green; font-weight: bold;");
+                console.log("  チャンネル名:", matchedChannel.name);
+                console.log("  エイリアス:", matchedChannel.aliases.join(', '));
+                console.log("  テンプレート数:", matchedChannel.data.length);
+                console.log("  テンプレート内容:");
+                matchedChannel.data.forEach((template, idx) => {
+                  console.log(`    ${idx + 1}. ${template.caption || template.content}`);
+                });
+              } else {
+                console.log("%c[ChatHelper] データ: なし", "color: orange; font-weight: bold;");
+              }
+            }
+
+            if (data?.global && data.global.length > 0) {
+              console.log("%c[ChatHelper] グローバルテンプレート:", "color: blue; font-weight: bold;", data.global.length + "個");
+            }
+          } catch (e) {
+            console.error("[ChatHelper] チャンネル情報チェック中にエラー:", e);
+          }
+        }, 500);
       } catch (e) {
         console.error("[ChatHelper] 初期化エラー:", e);
       }
@@ -2562,64 +2599,13 @@ const ChatHelper = {
 
     // iframe のリロードを検出するためのイベントリスナー
     if (!chatFrame.dataset.chatHelperListenerAdded) {
-      chatFrame.addEventListener("load", async () => {
+      chatFrame.addEventListener("load", () => {
         console.log("[ChatHelper] iframe load イベント: リロード検出、状態リセット");
-        // リロード時に状態をリセット（iframe内で自己初期化される）
         this.initialized = false;
         StampLoader.loaded = false;
         UI.isSettingUpButtons = false;
-        // チャンネル情報のキャッシュもクリア
         Utils.channelInfoCache = null;
         Utils.channelInfoCacheTime = 0;
-
-        // 少し待ってからチャンネル情報とデータをチェック
-        setTimeout(async () => {
-          try {
-            // iframe内のcontentWindowでチャンネル情報を取得
-            const iframeWindow = chatFrame.contentWindow;
-            if (!iframeWindow || !iframeWindow.Utils) {
-              console.log("[ChatHelper] iframe内のUtilsにアクセスできません（まだ初期化中）");
-              return;
-            }
-
-            const channelInfo = iframeWindow.Utils.getChannelInfo();
-            console.log("%c[ChatHelper] 検出されたチャンネル情報:", "color: lime; font-weight: bold;");
-            console.log("  識別子:", channelInfo?.name || "(なし)");
-            console.log("  URL:", channelInfo?.href || "(なし)");
-
-            // データを確認
-            const data = await ChromeStorageHelper.get(STORAGE_KEY);
-            if (channelInfo && channelInfo.name) {
-              const matchedChannel = data?.channels?.find(ch => {
-                if (!ch.aliases) ch.aliases = [ch.name];
-                return ch.aliases.includes(channelInfo.name);
-              });
-
-              if (matchedChannel) {
-                console.log("%c[ChatHelper] データ: あり", "color: green; font-weight: bold;");
-                console.log("  チャンネル名:", matchedChannel.name);
-                console.log("  エイリアス:", matchedChannel.aliases.join(', '));
-                console.log("  テンプレート数:", matchedChannel.data.length);
-                console.log("  テンプレート内容:");
-                matchedChannel.data.forEach((template, idx) => {
-                  console.log(`    ${idx + 1}. ${template.caption || template.content}`);
-                });
-              } else {
-                console.log("%c[ChatHelper] データ: なし", "color: orange; font-weight: bold;");
-                console.log("  このチャンネルのテンプレートは保存されていません");
-              }
-            } else {
-              console.log("%c[ChatHelper] チャンネル情報を取得できませんでした", "color: red; font-weight: bold;");
-            }
-
-            // グローバルテンプレートも表示
-            if (data?.global && data.global.length > 0) {
-              console.log("%c[ChatHelper] グローバルテンプレート:", "color: blue; font-weight: bold;", data.global.length + "個");
-            }
-          } catch (e) {
-            console.error("[ChatHelper] チャンネル情報チェック中にエラー:", e);
-          }
-        }, 2000); // 2秒待つ（iframe初期化を待つ）
       });
       chatFrame.dataset.chatHelperListenerAdded = "true";
       console.log("[ChatHelper] iframe load リスナーを追加");
