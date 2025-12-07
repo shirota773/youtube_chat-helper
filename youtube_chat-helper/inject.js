@@ -1442,7 +1442,7 @@ const UI = {
     // 右クリックでコンテキストメニュー表示
     btn.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      this.showContextMenu(e, entry, channelName, index, iframe, isGlobal);
+      this.showContextMenu(e, channelName, index, iframe, isGlobal);
     });
 
     return btn;
