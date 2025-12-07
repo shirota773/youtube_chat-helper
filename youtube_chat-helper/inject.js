@@ -43,6 +43,8 @@ const Utils = {
       // 優先度1: ytInitialDataからチャンネルIDを抽出（YouTube chat iframe用）
       try {
         if (typeof window.ytInitialData !== 'undefined' && window.ytInitialData) {
+          console.log('[ChatHelper DEBUG] ytInitialData構造:', JSON.stringify(window.ytInitialData, null, 2));
+
           // continuationContents内を探索
           const findChannelId = (obj) => {
             if (!obj || typeof obj !== 'object') return null;
