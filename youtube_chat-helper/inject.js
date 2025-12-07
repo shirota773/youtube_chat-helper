@@ -1714,7 +1714,38 @@ const UI = {
             border-radius: 4px;
             z-index: 10000;
             min-width: 140px;
+            padding-top: 24px;
     `;
+
+    // 閉じるボタンを追加
+    const closeBtn = document.createElement("div");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText = `
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      line-height: 18px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 20px;
+      font-weight: bold;
+      color: #666;
+      border-radius: 3px;
+    `;
+    closeBtn.addEventListener("mouseenter", () => {
+      closeBtn.style.backgroundColor = "#f0f0f0";
+      closeBtn.style.color = "#000";
+    });
+    closeBtn.addEventListener("mouseleave", () => {
+      closeBtn.style.backgroundColor = "transparent";
+      closeBtn.style.color = "#666";
+    });
+    closeBtn.addEventListener("click", () => {
+      menu.remove();
+    });
+    menu.appendChild(closeBtn);
 
     const toggleText = isGlobal ? "ローカルに移動" : "グローバルに移動";
     const aliasText = hasAlias ? "もとに戻す" : "別名表示";
