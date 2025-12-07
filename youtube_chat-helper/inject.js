@@ -1392,8 +1392,9 @@ const UI = {
         const data = this.readChatInput(iframe);
         if (data && data.length > 0) {
           const currentChannelInfo = Utils.getChannelInfo();
-          Storage.saveTemplate(data, !currentChannelInfo || !currentChannelInfo.name).then(() => {
-            this.setupChatButtons(iframe);
+          const isGlobal = !currentChannelInfo || !currentChannelInfo.name;
+          Storage.saveTemplate(data, isGlobal).then(() => {
+            this.addNewTemplateButton(iframe, isGlobal);
           });
         }
       }, "save-btn");
@@ -1438,15 +1439,100 @@ const UI = {
     btn.dataset.index = index;
     btn.dataset.isGlobal = isGlobal;
 
-    // 右クリックメニュー
-    btn.oncontextmenu = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.showContextMenu(event, channelName, index, iframe, isGlobal);
-      return false;
-    };
+    // 右クリックでコンテキストメニュー表示
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.showContextMenu(e, entry, channelName, index, iframe, isGlobal);
+    });
 
     return btn;
+  },
+
+  // 新しいテンプレートボタンを追加（全体を再初期化せずに）
+  async addNewTemplateButton(iframe, isGlobal) {
+    const wrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
+    if (!wrapper) return;
+
+    const channelInfo = Utils.getChannelInfo();
+    const templates = await Storage.getTemplatesForChannel(channelInfo?.name);
+
+    // 新しく追加されたテンプレート（最後の要素）
+    const newTemplates = isGlobal ? templates.global : templates.channel;
+    if (newTemplates.length === 0) return;
+
+    const newEntry = newTemplates[newTemplates.length - 1];
+    const newIndex = newTemplates.length - 1;
+    const channelName = isGlobal ? GLOBAL_CHANNEL_KEY : channelInfo?.name;
+
+    const newBtn = this.createTemplateButton(newEntry, newIndex, channelName, iframe, isGlobal);
+
+    // Saveボタンの前に挿入
+    const saveButton = Utils.safeQuerySelector(wrapper, "#save-channel-btn");
+    if (saveButton) {
+      wrapper.insertBefore(newBtn, saveButton);
+    } else {
+      wrapper.appendChild(newBtn);
+    }
+
+    // 新しいボタンにドラッグ＆ドロップを設定
+    this.setupButtonDragAndDropForButton(newBtn, wrapper, iframe);
+  },
+
+  // 単一のボタンにドラッグ＆ドロップを設定
+  setupButtonDragAndDropForButton(btn, wrapper, iframe) {
+    let draggedBtn = null;
+
+    btn.addEventListener("dragstart", (e) => {
+      draggedBtn = btn;
+      btn.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      iframe.contentDocument.body.style.cursor = "grabbing";
+    });
+
+    btn.addEventListener("dragend", () => {
+      btn.classList.remove("dragging");
+      draggedBtn = null;
+      iframe.contentDocument.body.style.cursor = "";
+    });
+
+    btn.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      const currentDragged = wrapper.querySelector(".dragging");
+      if (!currentDragged || currentDragged === btn) return;
+
+      // 同じカテゴリ（グローバル/ローカル）のみ並び替え可能
+      if (currentDragged.dataset.isGlobal !== btn.dataset.isGlobal) return;
+
+      const rect = btn.getBoundingClientRect();
+      const midX = rect.left + rect.width / 2;
+
+      if (e.clientX < midX) {
+        wrapper.insertBefore(currentDragged, btn);
+      } else {
+        wrapper.insertBefore(currentDragged, btn.nextSibling);
+      }
+    });
+
+    btn.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const currentDragged = wrapper.querySelector(".dragging");
+      if (!currentDragged) return;
+
+      // 新しい順番を保存
+      const channelName = currentDragged.dataset.channelName;
+      const oldIndex = parseInt(currentDragged.dataset.index);
+      const isGlobal = currentDragged.dataset.isGlobal === "true";
+
+      // 同じカテゴリのボタンを取得して新しいインデックスを計算
+      const sameTypeButtons = Array.from(wrapper.querySelectorAll(`button.draggable[data-is-global="${isGlobal}"]`));
+      const newIndex = sameTypeButtons.indexOf(currentDragged);
+
+      if (oldIndex !== newIndex && newIndex >= 0) {
+        Storage.reorderTemplate(channelName, oldIndex, newIndex).then(() => {
+          this.setupChatButtons(iframe);
+        });
+      }
+    });
   },
 
   setupButtonDragAndDrop(iframe) {
