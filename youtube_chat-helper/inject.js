@@ -1717,34 +1717,13 @@ const UI = {
             padding-top: 24px;
     `;
 
-    // 閉じるボタンを追加
+    // 閉じるボタン（右上、丸、border）
     const closeBtn = document.createElement("div");
     closeBtn.textContent = "×";
-    closeBtn.style.cssText = `
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 20px;
-      height: 20px;
-      line-height: 18px;
-      text-align: center;
-      cursor: pointer;
-      font-size: 20px;
-      font-weight: bold;
-      color: #666;
-      border-radius: 3px;
-    `;
-    closeBtn.addEventListener("mouseenter", () => {
-      closeBtn.style.backgroundColor = "#f0f0f0";
-      closeBtn.style.color = "#000";
-    });
-    closeBtn.addEventListener("mouseleave", () => {
-      closeBtn.style.backgroundColor = "transparent";
-      closeBtn.style.color = "#666";
-    });
-    closeBtn.addEventListener("click", () => {
-      menu.remove();
-    });
+    closeBtn.style.cssText = "position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; line-height: 16px; text-align: center; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; border: 1px solid #ccc; border-radius: 50%; background: white;";
+    closeBtn.onmouseenter = () => { closeBtn.style.backgroundColor = "#f0f0f0"; closeBtn.style.color = "#000"; };
+    closeBtn.onmouseleave = () => { closeBtn.style.backgroundColor = "white"; closeBtn.style.color = "#666"; };
+    closeBtn.onclick = () => menu.remove();
     menu.appendChild(closeBtn);
 
     const toggleText = isGlobal ? "ローカルに移動" : "グローバルに移動";
