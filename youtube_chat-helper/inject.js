@@ -1,8 +1,12 @@
-// YouTube Chat Helper - Refactored Version v2.1
+// YouTube Chat Helper - Refactored Version v3.0
 // グローバル変数
 const STORAGE_KEY = "chatData";
 const SETTINGS_KEY = "chatHelperSettings";
 const GLOBAL_CHANNEL_KEY = "__global__";
+
+// チャンネル情報キャッシュ（非同期取得の結果を保持）
+let _channelInfoCache = null;
+let _channelInfoPromise = null;
 
 // ユーティリティ関数
 const Utils = {
@@ -117,6 +121,95 @@ const Utils = {
 
   isYouTube() {
     return window.location.hostname.includes("youtube.com");
+  },
+
+  // URLからvideoIdを抽出
+  extractVideoId(url) {
+    if (!url) url = window.location.href;
+    const urlParams = new URLSearchParams(new URL(url).search);
+    return urlParams.get('v') || null;
+  },
+
+  // oEmbed APIでチャンネル情報を取得
+  async fetchChannelFromOEmbed(videoId) {
+    try {
+      const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+      // author_url は "@handle" 形式: https://www.youtube.com/@SakuraMiko
+      const handle = data.author_url ? data.author_url.split('/').pop() : null;
+      return {
+        name: data.author_name,
+        handle: handle,
+        href: data.author_url
+      };
+    } catch (e) {
+      console.warn("oEmbed API 失敗:", e);
+      return null;
+    }
+  },
+
+  // @handleからUCxxxx形式のチャンネルIDを解決
+  async resolveChannelId(handle) {
+    if (!handle) return null;
+    try {
+      // YouTube同一オリジンなのでCORS問題なし
+      const response = await fetch(`https://www.youtube.com/${handle}`);
+      if (!response.ok) return null;
+      const html = await response.text();
+      // HTMLからchannelIdを抽出
+      const match = html.match(/"externalId"\s*:\s*"(UC[^"]+)"/) ||
+                    html.match(/"channelId"\s*:\s*"(UC[^"]+)"/);
+      if (match) {
+        console.log(`チャンネルID解決: ${handle} → ${match[1]}`);
+        return match[1];
+      }
+    } catch (e) {
+      console.warn(`チャンネルID解決失敗 (${handle}):`, e);
+    }
+    return null;
+  },
+
+  // 非同期でチャンネル情報を取得（oEmbed + UCxxxx解決）
+  async getChannelInfoAsync() {
+    // キャッシュがあればそれを返す
+    if (_channelInfoCache) return _channelInfoCache;
+    // 既に取得中ならそのPromiseを返す
+    if (_channelInfoPromise) return _channelInfoPromise;
+
+    _channelInfoPromise = this._resolveChannelInfo();
+    _channelInfoCache = await _channelInfoPromise;
+    _channelInfoPromise = null;
+    return _channelInfoCache;
+  },
+
+  async _resolveChannelInfo() {
+    const videoId = this.extractVideoId();
+    if (!videoId) {
+      // videoIdが取れない場合は同期版にフォールバック
+      return this.getChannelInfo();
+    }
+
+    // oEmbed APIでチャンネル名と@handleを取得
+    const oembedResult = await this.fetchChannelFromOEmbed(videoId);
+    if (!oembedResult) {
+      return this.getChannelInfo();
+    }
+
+    // @handleからUCxxxxを解決
+    const channelId = await this.resolveChannelId(oembedResult.handle);
+
+    const result = {
+      id: channelId || null,
+      handle: oembedResult.handle || null,
+      name: oembedResult.name,
+      href: oembedResult.href,
+      videoId: videoId
+    };
+
+    console.log("チャンネル情報取得完了:", result);
+    return result;
   }
 };
 
@@ -192,7 +285,7 @@ const Storage = {
     }
   },
 
-  saveTemplate(newContent, isGlobal = false) {
+  saveTemplate(newContent, isGlobal = false, channelInfo = null) {
     const data = this.getData();
     const template = {
       timestamp: new Date().toISOString(),
@@ -204,22 +297,32 @@ const Storage = {
       if (!data.global) data.global = [];
       data.global.push(template);
     } else {
-      const channelInfo = Utils.getChannelInfo();
-      if (!channelInfo) {
+      // channelInfoが渡されなければキャッシュまたは同期版から取得
+      const info = channelInfo || _channelInfoCache || Utils.getChannelInfo();
+      if (!info) {
         console.warn("チャンネル情報が取得できません。");
         return false;
       }
 
-      let channelIndex = data.channels.findIndex(ch => ch.name === channelInfo.name);
-      if (channelIndex === -1) {
-        data.channels.push({
-          name: channelInfo.name,
-          href: channelInfo.href,
-          data: [template]
-        });
+      // 既存チャンネルを検索（id > handle > name）
+      let channel = this.findChannel(data, info);
+      if (!channel) {
+        channel = {
+          name: info.name,
+          href: info.href,
+          data: []
+        };
+        // 新しいフィールドがあれば追加
+        if (info.id) channel.id = info.id;
+        if (info.handle) channel.handle = info.handle;
+        data.channels.push(channel);
       } else {
-        data.channels[channelIndex].data.push(template);
+        // 既存チャンネルにid/handleが未設定なら更新
+        if (info.id && !channel.id) channel.id = info.id;
+        if (info.handle && !channel.handle) channel.handle = info.handle;
+        if (info.name && !channel.name) channel.name = info.name;
       }
+      channel.data.push(template);
     }
 
     return this.saveData(data);
@@ -233,11 +336,13 @@ const Storage = {
         data.global.splice(index, 1);
       }
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      const channel = data.channels.find(ch =>
+        ch.name === channelName || ch.id === channelName || ch.handle === channelName
+      );
       if (!channel) return false;
       channel.data.splice(index, 1);
       if (channel.data.length === 0) {
-        data.channels = data.channels.filter(ch => ch.name !== channelName);
+        data.channels = data.channels.filter(ch => ch !== channel);
       }
     }
 
@@ -254,11 +359,14 @@ const Storage = {
       if (!data.global || !data.global[index]) return false;
       template = data.global.splice(index, 1)[0];
     } else {
-      const channel = data.channels.find(ch => ch.name === fromChannel);
+      // fromChannelはnameの場合もid/handleの場合もある
+      const channel = data.channels.find(ch =>
+        ch.name === fromChannel || ch.id === fromChannel || ch.handle === fromChannel
+      );
       if (!channel || !channel.data[index]) return false;
       template = channel.data.splice(index, 1)[0];
       if (channel.data.length === 0) {
-        data.channels = data.channels.filter(ch => ch.name !== fromChannel);
+        data.channels = data.channels.filter(ch => ch !== channel);
       }
     }
 
@@ -267,19 +375,21 @@ const Storage = {
       if (!data.global) data.global = [];
       data.global.push(template);
     } else {
-      const channelInfo = Utils.getChannelInfo();
-      if (!channelInfo) return false;
+      const info = _channelInfoCache || Utils.getChannelInfo();
+      if (!info) return false;
 
-      let channelIndex = data.channels.findIndex(ch => ch.name === channelInfo.name);
-      if (channelIndex === -1) {
-        data.channels.push({
-          name: channelInfo.name,
-          href: channelInfo.href,
-          data: [template]
-        });
-      } else {
-        data.channels[channelIndex].data.push(template);
+      let existingChannel = this.findChannel(data, info);
+      if (!existingChannel) {
+        existingChannel = {
+          name: info.name,
+          href: info.href,
+          data: []
+        };
+        if (info.id) existingChannel.id = info.id;
+        if (info.handle) existingChannel.handle = info.handle;
+        data.channels.push(existingChannel);
       }
+      existingChannel.data.push(template);
     }
 
     return this.saveData(data);
@@ -292,7 +402,9 @@ const Storage = {
     if (channelName === GLOBAL_CHANNEL_KEY) {
       templates = data.global || [];
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      const channel = data.channels.find(ch =>
+        ch.name === channelName || ch.id === channelName || ch.handle === channelName
+      );
       if (!channel) return false;
       templates = channel.data;
     }
@@ -307,6 +419,14 @@ const Storage = {
     return this.saveData(data);
   },
 
+  // チャンネルを名前/ID/handleで検索するヘルパー
+  _findChannelByKey(data, channelName) {
+    if (channelName === GLOBAL_CHANNEL_KEY) return null;
+    return data.channels.find(ch =>
+      ch.name === channelName || ch.id === channelName || ch.handle === channelName
+    );
+  },
+
   // エイリアスを設定
   setAlias(channelName, index, alias) {
     const data = this.getData();
@@ -316,7 +436,7 @@ const Storage = {
       if (!data.global || !data.global[index]) return false;
       template = data.global[index];
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      const channel = this._findChannelByKey(data, channelName);
       if (!channel || !channel.data[index]) return false;
       template = channel.data[index];
     }
@@ -334,7 +454,7 @@ const Storage = {
       if (!data.global || !data.global[index]) return false;
       template = data.global[index];
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      const channel = this._findChannelByKey(data, channelName);
       if (!channel || !channel.data[index]) return false;
       template = channel.data[index];
     }
@@ -351,7 +471,32 @@ const Storage = {
     }).join("").slice(0, 50);
   },
 
-  getTemplatesForChannel(channelName) {
+  // チャンネル情報でマッチするチャンネルを検索（id > handle > name の優先順）
+  findChannel(data, channelInfo) {
+    if (!channelInfo) return null;
+
+    // 1. チャンネルID (UCxxxx) でマッチ
+    if (channelInfo.id) {
+      const ch = data.channels.find(c => c.id === channelInfo.id);
+      if (ch) return ch;
+    }
+
+    // 2. @handle でマッチ
+    if (channelInfo.handle) {
+      const ch = data.channels.find(c => c.handle === channelInfo.handle);
+      if (ch) return ch;
+    }
+
+    // 3. チャンネル名でマッチ（後方互換性）
+    if (channelInfo.name) {
+      const ch = data.channels.find(c => c.name === channelInfo.name);
+      if (ch) return ch;
+    }
+
+    return null;
+  },
+
+  getTemplatesForChannel(channelInfo) {
     const data = this.getData();
     const result = { channel: [], global: [] };
 
@@ -359,11 +504,11 @@ const Storage = {
       result.global = data.global.map((t, i) => ({ ...t, index: i, isGlobal: true }));
     }
 
-    if (channelName) {
-      const channel = data.channels.find(ch => ch.name === channelName);
-      if (channel) {
-        result.channel = channel.data.map((t, i) => ({ ...t, index: i, isGlobal: false }));
-      }
+    // channelInfoがstringの場合は後方互換性のためnameとして扱う
+    const info = typeof channelInfo === "string" ? { name: channelInfo } : channelInfo;
+    const channel = this.findChannel(data, info);
+    if (channel) {
+      result.channel = channel.data.map((t, i) => ({ ...t, index: i, isGlobal: false }));
     }
 
     return result;
@@ -421,20 +566,34 @@ const CCPPP = {
       "yt-live-chat-text-input-field-renderer#input #input"
     );
 
-    if (!inputField) return;
+    if (!inputField) {
+      console.warn("CCPPP: 入力フィールドが見つかりません");
+      return;
+    }
 
     if (this.observer) this.observer.disconnect();
 
-    this.observer = new MutationObserver(
-      Utils.debounce(() => this.processInput(iframe), 300)
-    );
+    const debouncedProcess = Utils.debounce(() => this.processInput(iframe), 300);
 
+    // MutationObserver
+    this.observer = new MutationObserver(debouncedProcess);
     this.observer.observe(inputField, {
       childList: true,
       characterData: true,
       subtree: true
     });
 
+    // paste/inputイベントでも検知（MutationObserverだけでは不十分な場合の補完）
+    inputField.addEventListener("paste", () => {
+      console.log("CCPPP: pasteイベント検出");
+      // ペースト後のDOM更新を待ってから処理
+      setTimeout(() => this.processInput(iframe), 100);
+      setTimeout(() => this.processInput(iframe), 500);
+    });
+
+    inputField.addEventListener("input", debouncedProcess);
+
+    console.log("CCPPP: 入力フィールド監視開始");
     // 初回チェック
     this.processInput(iframe);
   },
@@ -442,10 +601,7 @@ const CCPPP = {
   processInput(iframe) {
     if (!this.enabled) return;
 
-    if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping processInput");
-      return;
-    }
+    if (!iframe.contentDocument) return;
 
     const inputField = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -453,6 +609,9 @@ const CCPPP = {
     );
 
     if (!inputField) return;
+
+    // 既にCCPPPボタンを処理中のノードはスキップ
+    if (inputField.querySelector(".ccppp-emoji-btn")) return;
 
     // テキストノードを検索（iframe内のdocumentを使用）
     const textNodes = [];
@@ -468,9 +627,13 @@ const CCPPP = {
       textNodes.push(node);
     }
 
+    if (textNodes.length === 0) return;
+
     // 各テキストノードで絵文字名を検索
     textNodes.forEach(textNode => {
       const text = textNode.textContent;
+      if (!text || text.indexOf(':') === -1) return;
+
       const regex = /:([^:\s]+):/g;
       let match;
       let lastIndex = 0;
@@ -481,6 +644,7 @@ const CCPPP = {
         const emojiName = match[1];
         if (this.emojiMap.has(emojiName)) {
           hasEmoji = true;
+          console.log(`CCPPP: 絵文字検出 "${emojiName}"`);
           // マッチ前のテキスト
           if (match.index > lastIndex) {
             fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex, match.index)));
@@ -489,6 +653,8 @@ const CCPPP = {
           const btn = this.createEmojiButton(emojiName, iframe);
           fragments.push(btn);
           lastIndex = match.index + match[0].length;
+        } else {
+          console.log(`CCPPP: ":${emojiName}:" はemojiMapに未登録`);
         }
       }
 
@@ -497,10 +663,20 @@ const CCPPP = {
         if (lastIndex < text.length) {
           fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex)));
         }
+        // MutationObserverを一時停止して無限ループを防ぐ
+        if (this.observer) this.observer.disconnect();
         // ノードを置換
         const parent = textNode.parentNode;
         fragments.forEach(frag => parent.insertBefore(frag, textNode));
         parent.removeChild(textNode);
+        // MutationObserverを再開
+        if (this.observer) {
+          this.observer.observe(inputField, {
+            childList: true,
+            characterData: true,
+            subtree: true
+          });
+        }
       }
     });
   },
@@ -524,16 +700,45 @@ const CCPPP = {
       e.preventDefault();
       e.stopPropagation();
 
+      // まず絵文字ピッカーが開いているか確認、開いていなければ開く
+      const emojiPickerBtn = Utils.safeQuerySelector(
+        iframe.contentDocument,
+        "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
+      );
+
       const categories = Utils.safeQuerySelector(
         iframe.contentDocument,
         "tp-yt-iron-pages #categories"
       );
-      if (categories) {
-        const emojiBtn = Utils.safeQuerySelector(categories, `[alt="${emojiName}"]`);
-        if (emojiBtn) {
-          emojiBtn.click();
-          btn.remove();
+
+      const clickEmoji = () => {
+        const cats = Utils.safeQuerySelector(
+          iframe.contentDocument,
+          "tp-yt-iron-pages #categories"
+        );
+        if (cats) {
+          const emojiBtn = Utils.safeQuerySelector(cats, `img[alt="${emojiName}"]`);
+          if (emojiBtn) {
+            console.log(`CCPPP: 絵文字 "${emojiName}" をクリック`);
+            emojiBtn.click();
+            btn.remove();
+          } else {
+            console.warn(`CCPPP: 絵文字 "${emojiName}" がピッカー内で見つかりません`);
+          }
         }
+      };
+
+      if (!categories && emojiPickerBtn) {
+        // ピッカーが閉じている場合、開いてから実行
+        console.log("CCPPP: 絵文字ピッカーを開きます");
+        emojiPickerBtn.click();
+        setTimeout(() => {
+          clickEmoji();
+          // ピッカーを閉じる
+          if (emojiPickerBtn) emojiPickerBtn.click();
+        }, 300);
+      } else {
+        clickEmoji();
       }
     });
 
@@ -658,8 +863,12 @@ const UI = {
     const buttonWrapper = document.createElement("div");
     buttonWrapper.id = "chat-helper-buttons";
 
-    const channelInfo = Utils.getChannelInfo();
-    const templates = Storage.getTemplatesForChannel(channelInfo?.name);
+    // キャッシュまたは同期版からチャンネル情報を取得
+    const channelInfo = _channelInfoCache || Utils.getChannelInfo();
+    const templates = Storage.getTemplatesForChannel(channelInfo);
+
+    // チャンネル識別キー（UIの内部処理用: id > handle > name）
+    const channelKey = channelInfo?.id || channelInfo?.handle || channelInfo?.name;
 
     // グローバルテンプレートボタン
     templates.global.forEach((entry, idx) => {
@@ -669,7 +878,7 @@ const UI = {
 
     // チャンネル別テンプレートボタン
     templates.channel.forEach((entry, idx) => {
-      const btn = this.createTemplateButton(entry, idx, channelInfo.name, iframe, false);
+      const btn = this.createTemplateButton(entry, idx, channelKey, iframe, false);
       buttonWrapper.appendChild(btn);
     });
 
@@ -677,7 +886,7 @@ const UI = {
     const saveButton = this.createButton("save-channel-btn", "Save", () => {
       const data = this.readChatInput(iframe);
       if (data && data.length > 0) {
-        Storage.saveTemplate(data, false);
+        Storage.saveTemplate(data, false, channelInfo);
         this.setupChatButtons(iframe);
       }
     }, "save-btn");
@@ -1074,7 +1283,7 @@ const UI = {
     this.managementModal = modal;
 
     const data = Storage.getData();
-    const channelInfo = Utils.getChannelInfo();
+    const channelInfo = _channelInfoCache || Utils.getChannelInfo();
     const settings = Settings.get();
 
     modal.innerHTML = `
@@ -1140,9 +1349,11 @@ const UI = {
     // 現在のチャンネルタブ
     const currentTab = modal.querySelector("#tab-current");
     if (channelInfo) {
-      const channel = data.channels.find(ch => ch.name === channelInfo.name);
+      const channel = Storage.findChannel(data, channelInfo);
+      const displayName = channelInfo.name || channelInfo.handle || channelInfo.id || "Unknown";
+      const channelKey = channel ? (channel.id || channel.handle || channel.name) : null;
       if (channel && channel.data.length > 0) {
-        currentTab.innerHTML = `<h3>${channelInfo.name}</h3>` + this.renderTemplateList(channel.name, channel.data, false);
+        currentTab.innerHTML = `<h3>${displayName}</h3>` + this.renderTemplateList(channelKey, channel.data, false);
       } else {
         currentTab.innerHTML = "<p>このチャンネルにはテンプレートがありません。</p>";
       }
@@ -1619,7 +1830,7 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("YouTube Chat Helper v2.7 を初期化中...");
+    console.log("YouTube Chat Helper v3.0 を初期化中...");
 
     // iframe内で実行されているかチェック
     const isInIframe = window.self !== window.top;
@@ -1637,6 +1848,13 @@ const ChatHelper = {
     UI.addMainPageStyles();
     this.observeDOM();
     this.checkForChatFrame();
+
+    // 非同期でチャンネル情報を取得（通常ページでも実行）
+    Utils.getChannelInfoAsync().then(info => {
+      if (info) {
+        console.log("チャンネル情報(非同期):", info);
+      }
+    });
 
     // 設定変更を監視
     Settings.listenForChanges((newSettings) => {
@@ -1664,6 +1882,15 @@ const ChatHelper = {
       UI.addStyles(pseudoIframe);
       UI.setupChatButtons(pseudoIframe);
       StampLoader.autoLoadStamps(pseudoIframe);
+
+      // 非同期でチャンネル情報を取得し、取得完了後にボタンを再描画
+      Utils.getChannelInfoAsync().then(info => {
+        if (info && (info.id || info.handle)) {
+          console.log("チャンネル情報(非同期)取得完了:", info);
+          // チャンネル情報が更新されたのでボタンを再描画
+          UI.setupChatButtons(pseudoIframe);
+        }
+      });
 
       // 設定変更を監視
       Settings.listenForChanges((newSettings) => {
@@ -1701,6 +1928,9 @@ const ChatHelper = {
         lastUrl = location.href;
         this.initialized = false;
         StampLoader.loaded = false;
+        // チャンネル情報キャッシュをクリア（新しい動画/チャンネルの可能性）
+        _channelInfoCache = null;
+        _channelInfoPromise = null;
         this.checkForChatFrame();
       }
     });
