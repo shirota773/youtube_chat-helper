@@ -145,7 +145,6 @@ const Utils = {
         href: data.author_url
       };
     } catch (e) {
-      console.warn("oEmbed API 失敗:", e);
       return null;
     }
   },
@@ -162,11 +161,10 @@ const Utils = {
       const match = html.match(/"externalId"\s*:\s*"(UC[^"]+)"/) ||
                     html.match(/"channelId"\s*:\s*"(UC[^"]+)"/);
       if (match) {
-        console.log(`チャンネルID解決: ${handle} → ${match[1]}`);
         return match[1];
       }
     } catch (e) {
-      console.warn(`チャンネルID解決失敗 (${handle}):`, e);
+      // resolveChannelId失敗
     }
     return null;
   },
@@ -208,7 +206,6 @@ const Utils = {
       videoId: videoId
     };
 
-    console.log("チャンネル情報取得完了:", result);
     return result;
   }
 };
@@ -300,7 +297,6 @@ const Storage = {
       // channelInfoが渡されなければキャッシュまたは同期版から取得
       const info = channelInfo || _channelInfoCache || Utils.getChannelInfo();
       if (!info) {
-        console.warn("チャンネル情報が取得できません。");
         return false;
       }
 
@@ -526,20 +522,14 @@ const CCPPP = {
     if (!this.enabled) return;
 
     // iframe.contentDocument が null の場合は初期化をスキップ
-    if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping init");
-      return;
-    }
+    if (!iframe.contentDocument) return;
 
     this.buildEmojiMap(iframe);
     this.observeInput(iframe);
   },
 
   buildEmojiMap(iframe) {
-    if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping buildEmojiMap");
-      return;
-    }
+    if (!iframe.contentDocument) return;
 
     const emojis = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
@@ -552,24 +542,17 @@ const CCPPP = {
       }
     });
 
-    console.log(`CCPPP: ${this.emojiMap.size} 個の絵文字を検出`);
   },
 
   observeInput(iframe) {
-    if (!iframe.contentDocument) {
-      console.warn("CCPPP: iframe.contentDocument is null, skipping observeInput");
-      return;
-    }
+    if (!iframe.contentDocument) return;
 
     const inputField = Utils.safeQuerySelector(
       iframe.contentDocument,
       "yt-live-chat-text-input-field-renderer#input #input"
     );
 
-    if (!inputField) {
-      console.warn("CCPPP: 入力フィールドが見つかりません");
-      return;
-    }
+    if (!inputField) return;
 
     if (this.observer) this.observer.disconnect();
 
@@ -585,15 +568,12 @@ const CCPPP = {
 
     // paste/inputイベントでも検知（MutationObserverだけでは不十分な場合の補完）
     inputField.addEventListener("paste", () => {
-      console.log("CCPPP: pasteイベント検出");
-      // ペースト後のDOM更新を待ってから処理
       setTimeout(() => this.processInput(iframe), 100);
       setTimeout(() => this.processInput(iframe), 500);
     });
 
     inputField.addEventListener("input", debouncedProcess);
 
-    console.log("CCPPP: 入力フィールド監視開始");
     // 初回チェック
     this.processInput(iframe);
   },
@@ -644,7 +624,6 @@ const CCPPP = {
         const emojiName = match[1];
         if (this.emojiMap.has(emojiName)) {
           hasEmoji = true;
-          console.log(`CCPPP: 絵文字検出 "${emojiName}"`);
           // マッチ前のテキスト
           if (match.index > lastIndex) {
             fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex, match.index)));
@@ -653,8 +632,6 @@ const CCPPP = {
           const btn = this.createEmojiButton(emojiName, iframe);
           fragments.push(btn);
           lastIndex = match.index + match[0].length;
-        } else {
-          console.log(`CCPPP: ":${emojiName}:" はemojiMapに未登録`);
         }
       }
 
@@ -719,18 +696,13 @@ const CCPPP = {
         if (cats) {
           const emojiBtn = Utils.safeQuerySelector(cats, `img[alt="${emojiName}"]`);
           if (emojiBtn) {
-            console.log(`CCPPP: 絵文字 "${emojiName}" をクリック`);
             emojiBtn.click();
             btn.remove();
-          } else {
-            console.warn(`CCPPP: 絵文字 "${emojiName}" がピッカー内で見つかりません`);
           }
         }
       };
 
       if (!categories && emojiPickerBtn) {
-        // ピッカーが閉じている場合、開いてから実行
-        console.log("CCPPP: 絵文字ピッカーを開きます");
         emojiPickerBtn.click();
         setTimeout(() => {
           clickEmoji();
@@ -761,10 +733,7 @@ const UI = {
       iframe.contentDocument,
       "yt-live-chat-text-input-field-renderer#input #input"
     );
-    if (!inputElement) {
-      console.warn("入力欄が見つかりません。");
-      return null;
-    }
+    if (!inputElement) return null;
 
     const inputData = [];
     inputElement.childNodes.forEach(node => {
@@ -786,10 +755,7 @@ const UI = {
     const categories = Utils.safeQuerySelector(inputPanel, "tp-yt-iron-pages #categories");
     const inputField = Utils.safeQuerySelector(inputPanel, "yt-live-chat-text-input-field-renderer#input");
 
-    if (!inputField) {
-      console.warn("入力欄が見つかりません。");
-      return;
-    }
+    if (!inputField) return;
 
     data.forEach(item => {
       if (typeof item === "string") {
@@ -829,23 +795,16 @@ const UI = {
     this.currentIframe = iframe;
 
     // iframe.contentDocument が null の場合は早期リターン
-    if (!iframe.contentDocument) {
-      console.warn("iframe.contentDocument is null, skipping setupChatButtons");
-      return;
-    }
+    if (!iframe.contentDocument) return;
 
     /* emoji load */
     const emojiButton = Utils.safeQuerySelector(
       iframe.contentDocument,
       "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
     );
-    if (!emojiButton) {
-      console.log("絵文字ボタンが見つかりません。");
-      return;
-    }
+    if (!emojiButton) return;
     emojiButton.click();
     emojiButton.click();
-    console.log("スタンプを自動読み込みしました。");
 
     const chatContainer = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -1500,10 +1459,7 @@ const UI = {
 
   addStyles(iframe) {
     // iframe.contentDocument が null の場合は早期リターン（クロスオリジンまたは未ロードの場合）
-    if (!iframe.contentDocument) {
-      console.warn("iframe.contentDocument is null, skipping addStyles");
-      return;
-    }
+    if (!iframe.contentDocument) return;
 
     const styleId = "chat-helper-styles";
     if (iframe.contentDocument.querySelector(`#${styleId}`)) return;
@@ -1830,35 +1786,22 @@ const ChatHelper = {
   observer: null,
 
   init() {
-    console.log("YouTube Chat Helper v3.0 を初期化中...");
-
     // iframe内で実行されているかチェック
     const isInIframe = window.self !== window.top;
     const isYouTubeChatIframe = window.location.href.includes("youtube.com/live_chat");
 
     if (isInIframe && isYouTubeChatIframe) {
-      // iframe内のYouTubeチャット - 直接初期化
-      console.log("YouTube Chat Helper: iframe内のチャットを検出、直接初期化");
       this.initializeCurrentFrame();
       return;
     }
 
-    // 通常のページ（YouTube/Holodex）
-    console.log("YouTube Chat Helper: 通常のページとして初期化");
     UI.addMainPageStyles();
     this.observeDOM();
     this.checkForChatFrame();
 
-    // 非同期でチャンネル情報を取得（通常ページでも実行）
-    Utils.getChannelInfoAsync().then(info => {
-      if (info) {
-        console.log("チャンネル情報(非同期):", info);
-      }
-    });
+    Utils.getChannelInfoAsync();
 
-    // 設定変更を監視
     Settings.listenForChanges((newSettings) => {
-      console.log("設定が変更されました:", newSettings);
       CCPPP.enabled = newSettings.ccpppEnabled;
 
       // CCPPPが有効になった場合、再初期化
@@ -1869,9 +1812,6 @@ const ChatHelper = {
   },
 
   initializeCurrentFrame() {
-    // 現在のウィンドウがiframe内のチャットの場合、自分自身を初期化
-    console.log("initializeCurrentFrame: 現在のフレームを初期化");
-
     // iframe要素の代わりに、windowオブジェクトを使用
     const pseudoIframe = {
       contentDocument: document,
@@ -1886,15 +1826,12 @@ const ChatHelper = {
       // 非同期でチャンネル情報を取得し、取得完了後にボタンを再描画
       Utils.getChannelInfoAsync().then(info => {
         if (info && (info.id || info.handle)) {
-          console.log("チャンネル情報(非同期)取得完了:", info);
-          // チャンネル情報が更新されたのでボタンを再描画
           UI.setupChatButtons(pseudoIframe);
         }
       });
 
       // 設定変更を監視
       Settings.listenForChanges((newSettings) => {
-        console.log("iframe内: 設定が変更されました:", newSettings);
         CCPPP.enabled = newSettings.ccpppEnabled;
 
         if (newSettings.ccpppEnabled) {
@@ -1902,7 +1839,6 @@ const ChatHelper = {
         }
       });
 
-      console.log("initializeCurrentFrame: 初期化完了");
     } catch (e) {
       console.error("initializeCurrentFrame: エラー", e);
     }
@@ -1987,7 +1923,6 @@ const ChatHelper = {
       }
     } catch (e) {
       // クロスオリジンの場合、loadイベントを待つ
-      console.log("チャットフレームのloadイベントを待機中...");
     }
   },
 
@@ -2015,8 +1950,7 @@ const ChatHelper = {
             }
           }
         } catch (e) {
-          // エラーを無視（クロスオリジンの場合）
-          console.warn("iframe.src にアクセスできません（クロスオリジン）:", e);
+          // クロスオリジンの場合は無視
         }
       });
     }
@@ -2030,18 +1964,12 @@ const ChatHelper = {
             chatFrames.push(iframe);
           }
         } catch (e) {
-          console.warn("iframe.src にアクセスできません（クロスオリジン）:", e);
+          // クロスオリジンの場合は無視
         }
       }
     }
 
-    if (chatFrames.length === 0) {
-      console.log("Holodex: チャットフレームが見つかりません");
-      return;
-    }
-
-    console.log(`Holodex: ${chatFrames.length} 個のチャットフレームを検出`);
-    console.log("Holodex: iframe内で自己初期化が実行されます（クロスオリジン制約のため親ページからは初期化不可）");
+    if (chatFrames.length === 0) return;
 
     // クロスオリジンの場合、親ページからiframe内を初期化することはできません
     // 代わりに、all_frames:trueにより、iframe内でスクリプトが実行され、
@@ -2049,46 +1977,24 @@ const ChatHelper = {
   },
 
   initializeFrameSafe(iframe, frameId) {
-    console.log(`initializeFrameSafe: ${frameId} の初期化開始`);
-
-    // フレームを初期化（戻り値で成功/失敗を判定）
     const success = this.initializeFrame(iframe);
-
     if (success) {
-      // 初期化成功時のみマークを付ける
       iframe.dataset.chatHelperInitialized = "true";
-      console.log(`initializeFrameSafe: ${frameId} の初期化成功、マークを設定`);
-    } else {
-      console.warn(`initializeFrameSafe: ${frameId} の初期化失敗`);
     }
   },
 
   initializeFrame(iframe) {
-    console.log("initializeFrame: チャットフレームを初期化中...");
-
-    // iframe.contentDocument が null の場合は初期化をスキップ
     if (!iframe.contentDocument) {
-      console.warn("initializeFrame: iframe.contentDocument is null, cannot initialize frame");
       this.initialized = false;
-      return false; // 失敗を返す
+      return false;
     }
-
-    console.log("initializeFrame: iframe.contentDocument が有効です");
 
     try {
       this.initialized = true;
-
-      console.log("initializeFrame: UI.addStyles を呼び出し");
       UI.addStyles(iframe);
-
-      console.log("initializeFrame: UI.setupChatButtons を呼び出し");
       UI.setupChatButtons(iframe);
-
-      console.log("initializeFrame: StampLoader.autoLoadStamps を呼び出し");
       StampLoader.autoLoadStamps(iframe);
-
-      console.log("initializeFrame: YouTube Chat Helper の初期化完了！");
-      return true; // 成功を返す
+      return true;
     } catch (e) {
       console.error("initializeFrame: 初期化中にエラーが発生:", e);
       this.initialized = false;
@@ -2096,6 +2002,136 @@ const ChatHelper = {
     }
   }
 };
+
+// 診断機能
+const Diagnostics = {
+  async run() {
+    const results = {
+      version: "3.0",
+      timestamp: new Date().toISOString(),
+      page: {
+        url: window.location.href,
+        isYouTube: Utils.isYouTube(),
+        isHolodex: Utils.isHolodex(),
+        isIframe: window.self !== window.top,
+        isYouTubeChatIframe: window.location.href.includes("youtube.com/live_chat")
+      },
+      channelInfo: {
+        cache: _channelInfoCache,
+        sync: Utils.getChannelInfo()
+      },
+      ccppp: {
+        enabled: CCPPP.enabled,
+        emojiMapSize: CCPPP.emojiMap.size
+      },
+      chatHelper: {
+        initialized: ChatHelper.initialized
+      },
+      storage: {
+        channelCount: 0,
+        globalTemplateCount: 0,
+        channels: []
+      }
+    };
+
+    const data = Storage.getData();
+    results.storage.channelCount = data.channels.length;
+    results.storage.globalTemplateCount = (data.global || []).length;
+    results.storage.channels = data.channels.map(ch => ({
+      name: ch.name || null,
+      id: ch.id || null,
+      handle: ch.handle || null,
+      templateCount: ch.data.length
+    }));
+
+    return results;
+  },
+
+  async runChannelDetection() {
+    const results = {
+      timestamp: new Date().toISOString(),
+      steps: []
+    };
+
+    // Step 1: videoId
+    const videoId = Utils.extractVideoId();
+    results.steps.push({
+      name: "videoId抽出",
+      success: !!videoId,
+      result: videoId || "取得できません"
+    });
+
+    // Step 2: DOM検出（同期）
+    const domResult = Utils.getChannelInfo();
+    results.steps.push({
+      name: "DOM検出（同期）",
+      success: !!domResult,
+      result: domResult || "検出できません"
+    });
+
+    if (!videoId) {
+      results.steps.push({
+        name: "oEmbed API",
+        success: false,
+        result: "videoIdがないためスキップ"
+      });
+      return results;
+    }
+
+    // Step 3: oEmbed API
+    try {
+      const oembedResult = await Utils.fetchChannelFromOEmbed(videoId);
+      results.steps.push({
+        name: "oEmbed API",
+        success: !!oembedResult,
+        result: oembedResult || "取得失敗"
+      });
+
+      if (oembedResult && oembedResult.handle) {
+        // Step 4: resolveChannelId
+        try {
+          const channelId = await Utils.resolveChannelId(oembedResult.handle);
+          results.steps.push({
+            name: "チャンネルID解決",
+            success: !!channelId,
+            result: channelId || "解決できません"
+          });
+        } catch (e) {
+          results.steps.push({
+            name: "チャンネルID解決",
+            success: false,
+            result: `エラー: ${e.message}`
+          });
+        }
+      }
+    } catch (e) {
+      results.steps.push({
+        name: "oEmbed API",
+        success: false,
+        result: `エラー: ${e.message}`
+      });
+    }
+
+    return results;
+  }
+};
+
+// 診断リクエストのリスナー
+window.addEventListener("chatHelperRunDiagnostics", () => {
+  Diagnostics.run().then(results => {
+    window.dispatchEvent(new CustomEvent("chatHelperDiagnosticsResult", {
+      detail: results
+    }));
+  });
+});
+
+window.addEventListener("chatHelperRunChannelDetection", () => {
+  Diagnostics.runChannelDetection().then(results => {
+    window.dispatchEvent(new CustomEvent("chatHelperChannelDetectionResult", {
+      detail: results
+    }));
+  });
+});
 
 // 初期化
 if (document.readyState === "loading") {

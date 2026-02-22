@@ -3,7 +3,7 @@
   "name": "YouTube Chat Helper",
   "version": "3.0",
   "description": "Save and manage YouTube chat stamp templates with global and channel-specific support",
-  "permissions": ["storage"],
+  "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://holodex.net/*"

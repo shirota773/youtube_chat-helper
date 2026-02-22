@@ -5,7 +5,7 @@
     <title>YouTube Chat Helper</title>
     <style>
         body {
-            width: 280px;
+            width: 340px;
             padding: 12px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 14px;
@@ -16,6 +16,12 @@
             font-size: 16px;
             margin: 0 0 12px 0;
             color: #333;
+        }
+
+        h2 {
+            font-size: 13px;
+            margin: 0 0 8px 0;
+            color: #555;
         }
 
         .setting-item {
@@ -68,6 +74,52 @@
             color: #888;
             text-align: center;
         }
+
+        .diag-buttons {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .diag-buttons button {
+            flex: 1;
+            padding: 6px 8px;
+            font-size: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .diag-buttons button:hover {
+            background: #f0f0f0;
+        }
+
+        .diag-buttons button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #diag-result {
+            font-family: "Consolas", "Monaco", monospace;
+            font-size: 11px;
+            line-height: 1.5;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 4px;
+            padding: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            display: none;
+        }
+
+        #diag-result .ok { color: #4ec9b0; }
+        #diag-result .fail { color: #f44747; }
+        #diag-result .label { color: #9cdcfe; }
+        #diag-result .value { color: #ce9178; }
+        #diag-result .section { color: #569cd6; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -93,8 +145,17 @@
 
     <div class="divider"></div>
 
+    <h2>診断ツール</h2>
+    <div class="diag-buttons">
+        <button id="btn-diag">状態を確認</button>
+        <button id="btn-channel">チャンネル検出</button>
+    </div>
+    <div id="diag-result"></div>
+
+    <div class="divider"></div>
+
     <div class="info">
-        Version 2.4
+        Version 3.0
     </div>
 
     <script src="popup.js"></script>
