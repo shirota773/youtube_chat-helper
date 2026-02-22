@@ -11,20 +11,25 @@
         autoLoadStamps: true
     };
 
-    // 設定をページに注入
+    function getRootElement() {
+        return document.documentElement || document.head || document.body;
+    }
+
+    // 設定をDOM属性として共有（CSPでブロックされるinline scriptを使わない）
     function injectSettings(settings) {
-        const script = document.createElement("script");
-        script.textContent = `window.__CHAT_HELPER_SETTINGS__ = ${JSON.stringify(settings)};`;
-        document.documentElement.appendChild(script);
-        script.remove();
+        const root = getRootElement();
+        if (!root) return;
+        root.setAttribute("data-chat-helper-settings", JSON.stringify(settings));
     }
 
     // メインスクリプトを注入
     function injectScript(file) {
+        const root = getRootElement();
+        if (!root) return;
         const script = document.createElement("script");
         script.src = chrome.runtime.getURL(file);
         script.onload = () => script.remove();
-        document.documentElement.appendChild(script);
+        root.appendChild(script);
     }
 
     // 設定変更をページに通知
@@ -50,6 +55,7 @@
     chrome.storage.onChanged.addListener((changes, areaName) => {
         if (areaName === "local" && changes[SETTINGS_KEY]) {
             const newSettings = { ...defaultSettings, ...changes[SETTINGS_KEY].newValue };
+            injectSettings(newSettings);
             notifySettingsChange(newSettings);
         }
     });
@@ -57,10 +63,9 @@
     // 診断メッセージのハンドリング（popup.js からのリクエストを inject.js に転送）
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type === "runDiagnostics") {
-            // live_chat iframe または メインフレームのみ応答
+            // 診断は live_chat iframe のみ応答（複数フレーム時の結果ぶれ防止）
             const isChatFrame = window.location.href.includes("youtube.com/live_chat");
-            const isMainFrame = window.self === window.top;
-            if (!isChatFrame && !isMainFrame) return false;
+            if (!isChatFrame) return false;
 
             const handler = (e) => {
                 clearTimeout(timeoutId);
@@ -79,8 +84,7 @@
 
         if (message.type === "runChannelDetection") {
             const isChatFrame = window.location.href.includes("youtube.com/live_chat");
-            const isMainFrame = window.self === window.top;
-            if (!isChatFrame && !isMainFrame) return false;
+            if (!isChatFrame) return false;
 
             const handler = (e) => {
                 clearTimeout(timeoutId);

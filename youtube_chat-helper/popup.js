@@ -34,6 +34,16 @@ function saveSettings() {
 
 // --- 診断ツール ---
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isConnectionError(error) {
+    const msg = error?.message || "";
+    return msg.includes("Could not establish connection")
+        || msg.includes("Receiving end does not exist");
+}
+
 // アクティブタブにメッセージを送信（接続失敗時はコンテンツスクリプトを動的注入してリトライ）
 async function sendToActiveTab(message) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -42,16 +52,26 @@ async function sendToActiveTab(message) {
     try {
         return await chrome.tabs.sendMessage(tab.id, message);
     } catch (e) {
-        if (!e.message?.includes("Could not establish connection")) throw e;
+        if (!isConnectionError(e)) throw e;
 
         // コンテンツスクリプトが未注入 → 動的に注入してリトライ
         await chrome.scripting.executeScript({
             target: { tabId: tab.id, allFrames: true },
             files: ["content.js"]
         });
-        // inject.js の初期化を待つ
-        await new Promise(r => setTimeout(r, 1500));
-        return await chrome.tabs.sendMessage(tab.id, message);
+
+        // inject.js の初期化まで短い間隔でリトライ
+        let lastError = null;
+        for (let i = 0; i < 8; i++) {
+            await sleep(300);
+            try {
+                return await chrome.tabs.sendMessage(tab.id, message);
+            } catch (retryError) {
+                lastError = retryError;
+                if (!isConnectionError(retryError)) throw retryError;
+            }
+        }
+        throw lastError || e;
     }
 }
 
@@ -185,7 +205,7 @@ async function runChannelDetection() {
 // 接続エラーのフォーマット
 function formatConnectionError(e) {
     const msg = e.message || "";
-    if (msg.includes("Could not establish connection") || msg.includes("Receiving end does not exist")) {
+    if (isConnectionError(e)) {
         return span("fail", "接続エラー") + "\n"
             + span("label", "コンテンツスクリプトに接続できません。") + "\n"
             + span("label", "対処法: ページをリロードしてください（F5）");

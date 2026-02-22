@@ -218,7 +218,17 @@ const Settings = {
   },
 
   get() {
-    // content.jsから注入された設定を優先
+    // content.jsからDOM属性で共有された設定を優先
+    const attr = document.documentElement?.getAttribute("data-chat-helper-settings");
+    if (attr) {
+      try {
+        return { ...this.defaults, ...JSON.parse(attr) };
+      } catch (e) {
+        // JSON parse失敗時は次のフォールバックへ
+      }
+    }
+
+    // 後方互換: 旧方式のwindow変数も許容
     if (window.__CHAT_HELPER_SETTINGS__) {
       return { ...this.defaults, ...window.__CHAT_HELPER_SETTINGS__ };
     }
@@ -233,8 +243,14 @@ const Settings = {
   },
 
   save(settings) {
-    // グローバル変数を更新
+    // 互換性のためwindow変数を更新
     window.__CHAT_HELPER_SETTINGS__ = settings;
+    // 新方式: DOM属性も更新
+    try {
+      document.documentElement?.setAttribute("data-chat-helper-settings", JSON.stringify(settings));
+    } catch (e) {
+      // no-op
+    }
 
     // localStorageにも保存（バックアップ）
     try {
@@ -256,6 +272,11 @@ const Settings = {
   listenForChanges(callback) {
     window.addEventListener("chatHelperSettingsChanged", (e) => {
       window.__CHAT_HELPER_SETTINGS__ = e.detail;
+      try {
+        document.documentElement?.setAttribute("data-chat-helper-settings", JSON.stringify(e.detail));
+      } catch (err) {
+        // no-op
+      }
       callback(e.detail);
     });
   }
