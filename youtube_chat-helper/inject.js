@@ -835,7 +835,14 @@ const UI = {
       iframe.contentDocument,
       "#chat-messages #input-panel #container > #top"
     );
+    const inputField = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "yt-live-chat-text-input-field-renderer#input #input"
+    );
     if (!chatContainer) return;
+    if (!chatContainerTop) return;
+    // 登録者限定などで入力欄が無い/無効な場合はボタンUIを作らない
+    if (!inputField || inputField.getAttribute("contenteditable") === "false") return;
 
     const existingWrapper = Utils.safeQuerySelector(iframe.contentDocument, "#chat-helper-buttons");
     if (existingWrapper) existingWrapper.remove();
@@ -872,7 +879,6 @@ const UI = {
     }, "save-btn");
     buttonWrapper.appendChild(saveButton);
 
-    // chatContainer.appendChild(buttonWrapper);
     chatContainerTop.insertAdjacentElement("afterend", buttonWrapper);
 
     // ドラッグ＆ドロップを設定
