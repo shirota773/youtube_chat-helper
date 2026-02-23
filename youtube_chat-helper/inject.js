@@ -535,11 +535,239 @@ const Storage = {
 // CCPPP機能（絵文字自動変換）
 const CCPPP = {
   enabled: true,
+  debugEnabled: false,
+  // パフォーマンス重視: 既定はペースト時のみ変換（必要ならtrueに戻せる）
+  monitorInputChanges: false,
   emojiMap: new Map(),
   observer: null,
+  lastMapBuildAt: 0,
+
+  log(...args) {
+    if (!this.debugEnabled) return;
+    console.info("[CCPPP]", ...args);
+  },
+
+  bareKeysCache: null,
+  bareKeysCacheAt: 0,
+  bareKeysCacheSize: 0,
+
+  hasEmojiKey(key) {
+    const normalized = this.normalizeEmojiKey(key);
+    if (!normalized) return false;
+    return this.emojiMap.has(normalized)
+      || this.emojiMap.has(normalized.toLowerCase());
+  },
+
+  debugCheckKey(key) {
+    const normalized = this.normalizeEmojiKey(key);
+    const result = {
+      key,
+      normalized,
+      hasNormalized: this.emojiMap.has(normalized),
+      hasLower: this.emojiMap.has(normalized.toLowerCase()),
+      mapSize: this.emojiMap.size
+    };
+    this.log("debugCheckKey", result);
+    return result;
+  },
+
+  debugSampleKeys(limit = 30) {
+    const keys = Array.from(this.emojiMap.keys()).slice(0, limit);
+    this.log("debugSampleKeys", { limit, sampleCount: keys.length, keys });
+    return keys;
+  },
+
+  extractPastedEmojiCandidates(text) {
+    if (!text) return [];
+    const parserKeys = this.getBareKeysForParsing();
+    return this.parseTextByEmojiKeys(text, parserKeys)
+      .filter(part => part.type === "emoji")
+      .map(part => part.value);
+  },
+
+  parseTextByEmojiKeys(text, parserKeys) {
+    const parts = [];
+    if (!text) return parts;
+
+    const lowerText = text.toLowerCase();
+    let pos = 0;
+    let textBuffer = "";
+    const flushText = () => {
+      if (!textBuffer) return;
+      parts.push({ type: "text", value: textBuffer });
+      textBuffer = "";
+    };
+
+    while (pos < text.length) {
+      let matchedKey = "";
+      let matchedLength = 0;
+      for (const key of parserKeys) {
+        const colonToken = `:${key}:`;
+        if (lowerText.startsWith(colonToken, pos)) {
+          matchedKey = key;
+          matchedLength = colonToken.length;
+          break;
+        }
+        if (lowerText.startsWith(key, pos)) {
+          matchedKey = key;
+          matchedLength = key.length;
+          break;
+        }
+      }
+
+      if (matchedKey) {
+        flushText();
+        parts.push({ type: "emoji", value: matchedKey });
+        pos += matchedLength;
+      } else {
+        textBuffer += text[pos];
+        pos += 1;
+      }
+    }
+
+    flushText();
+    return parts;
+  },
+
+  getBareKeysForParsing() {
+    const now = Date.now();
+    const mapSize = this.emojiMap.size;
+    if (
+      this.bareKeysCache &&
+      this.bareKeysCacheSize === mapSize &&
+      now - this.bareKeysCacheAt < 5000
+    ) {
+      return this.bareKeysCache;
+    }
+
+    const keys = [];
+    for (const key of this.emojiMap.keys()) {
+      const normalized = this.normalizeEmojiKey(key).toLowerCase();
+      if (!normalized) continue;
+      if (!/^[a-z0-9][a-z0-9_-]{2,}$/i.test(normalized)) continue;
+      if (normalized.includes(":")) continue;
+      keys.push(normalized);
+    }
+
+    const unique = Array.from(new Set(keys)).sort((a, b) => b.length - a.length);
+    this.bareKeysCache = unique;
+    this.bareKeysCacheAt = now;
+    this.bareKeysCacheSize = mapSize;
+    return unique;
+  },
+
+  expandConcatenatedBareToken(token) {
+    const text = this.normalizeEmojiKey(token).toLowerCase();
+    if (!text) return [];
+
+    // 単独一致する場合はそのまま
+    if (this.hasEmojiKey(text)) return [text];
+
+    const keys = this.getBareKeysForParsing();
+    const result = [];
+    let pos = 0;
+
+    while (pos < text.length) {
+      let matched = null;
+      for (const key of keys) {
+        if (text.startsWith(key, pos)) {
+          matched = key;
+          break;
+        }
+      }
+      if (!matched) {
+        // 分割不能なら元トークンをそのまま返す
+        return [text];
+      }
+      result.push(matched);
+      pos += matched.length;
+    }
+
+    return result;
+  },
+
+  normalizeEmojiKey(value) {
+    if (!value) return "";
+    return String(value).trim().replace(/^:+|:+$/g, "");
+  },
+
+  addEmojiKey(key, src = "") {
+    const normalized = this.normalizeEmojiKey(key);
+    if (!normalized) return;
+    this.emojiMap.set(normalized, src);
+    this.emojiMap.set(normalized.toLowerCase(), src);
+  },
+
+  extractEmojiKeysFromElement(emojiElement) {
+    const candidates = [emojiElement.getAttribute("alt")];
+
+    const keys = [];
+    candidates.forEach(value => {
+      if (!value) return;
+      keys.push(value);
+
+      const colonMatches = String(value).match(/:([^:\s]+):/g);
+      if (colonMatches) {
+        colonMatches.forEach(token => keys.push(token));
+      }
+    });
+    return keys;
+  },
+
+  emojiElementMatches(emojiElement, emojiName) {
+    const target = this.normalizeEmojiKey(emojiName).toLowerCase();
+    if (!target) return false;
+    const alt = this.normalizeEmojiKey(emojiElement.getAttribute("alt")).toLowerCase();
+    return alt === target;
+  },
+
+  findEmojiElementByName(iframe, emojiName) {
+    if (!iframe.contentDocument) return null;
+    const target = this.normalizeEmojiKey(emojiName).toLowerCase();
+    if (!target) return null;
+
+    const emojis = iframe.contentDocument.querySelectorAll("tp-yt-iron-pages #categories img[alt]");
+    for (const emoji of emojis) {
+      if (this.emojiElementMatches(emoji, target)) {
+        return emoji;
+      }
+    }
+    return null;
+  },
+
+  ensureEmojiResolvable(iframe, emojiName) {
+    const normalized = this.normalizeEmojiKey(emojiName);
+    const lower = normalized.toLowerCase();
+    if (this.emojiMap.has(normalized) || this.emojiMap.has(lower)) {
+      this.log("resolve: map-hit", { emojiName: normalized, mapSize: this.emojiMap.size });
+      return true;
+    }
+
+    // mapが古い可能性があるときのみ再構築（毎トークン再構築を避ける）
+    const now = Date.now();
+    if (now - this.lastMapBuildAt > 1500) {
+      this.log("resolve: map-miss -> rebuild", { emojiName: normalized, mapSize: this.emojiMap.size });
+      this.buildEmojiMap(iframe);
+      if (this.emojiMap.has(normalized) || this.emojiMap.has(lower)) {
+        this.log("resolve: rebuild-hit", { emojiName: normalized, mapSize: this.emojiMap.size });
+        return true;
+      }
+    }
+
+    // 最後にDOMを直接走査して照合
+    const found = this.findEmojiElementByName(iframe, normalized);
+    if (found) {
+      this.extractEmojiKeysFromElement(found).forEach(key => this.addEmojiKey(key, found.src));
+      this.log("resolve: direct-dom-hit", { emojiName: normalized, alt: found.alt || null });
+      return true;
+    }
+    this.log("resolve: failed", { emojiName: normalized });
+    return false;
+  },
 
   init(iframe) {
     this.enabled = Settings.get().ccpppEnabled;
+    this.log("init", { enabled: this.enabled, url: window.location.href });
     if (!this.enabled) return;
 
     // iframe.contentDocument が null の場合は初期化をスキップ
@@ -552,16 +780,21 @@ const CCPPP = {
   buildEmojiMap(iframe) {
     if (!iframe.contentDocument) return;
 
+    this.emojiMap.clear();
+
     const emojis = Utils.safeQuerySelectorAll(
       iframe.contentDocument,
       "tp-yt-iron-pages #categories img[alt]"
     );
 
     emojis.forEach(emoji => {
-      if (emoji.alt) {
-        this.emojiMap.set(emoji.alt, emoji.src);
-      }
+      this.extractEmojiKeysFromElement(emoji).forEach(key => {
+        this.addEmojiKey(key, emoji.src);
+      });
     });
+    this.bareKeysCache = null;
+    this.lastMapBuildAt = Date.now();
+    this.log("buildEmojiMap", { emojiCount: emojis.length, mapSize: this.emojiMap.size });
 
   },
 
@@ -577,32 +810,166 @@ const CCPPP = {
 
     if (this.observer) this.observer.disconnect();
 
-    const debouncedProcess = Utils.debounce(() => this.processInput(iframe), 300);
-
-    // MutationObserver
-    this.observer = new MutationObserver(debouncedProcess);
-    this.observer.observe(inputField, {
-      childList: true,
-      characterData: true,
-      subtree: true
-    });
+    if (this.monitorInputChanges) {
+      const debouncedProcess = Utils.debounce(() => this.processInput(iframe, { mode: "input" }), 300);
+      this.observer = new MutationObserver(debouncedProcess);
+      this.observer.observe(inputField, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+      inputField.addEventListener("input", debouncedProcess);
+      this.log("event: bind input observer");
+    } else {
+      this.log("event: input observer disabled (paste-only mode)");
+    }
 
     // paste/inputイベントでも検知（MutationObserverだけでは不十分な場合の補完）
-    inputField.addEventListener("paste", () => {
-      setTimeout(() => this.processInput(iframe), 100);
-      setTimeout(() => this.processInput(iframe), 500);
-    });
+    if (!inputField.dataset.chatHelperCcpppBound) {
+      inputField.dataset.chatHelperCcpppBound = "true";
+      inputField.addEventListener("paste", (e) => {
+        this.log("event: paste");
+        try {
+          const pastedText = e.clipboardData?.getData("text/plain") || "";
+          if (!pastedText) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          this.insertFromPastedText(iframe, pastedText);
+        } catch (err) {
+          this.log("event: paste-token-check-error", { error: String(err) });
+        }
+      }, true);
+      this.log("event: bind input/paste");
+    }
 
-    inputField.addEventListener("input", debouncedProcess);
-
-    // 初回チェック
-    this.processInput(iframe);
+    this.bindSendButtonFocus(iframe);
   },
 
-  processInput(iframe) {
+  insertFromPastedText(iframe, pastedText) {
+    if (!iframe.contentDocument) return;
+    const parserKeys = this.getBareKeysForParsing();
+    if (parserKeys.length === 0) return;
+
+    const parts = this.parseTextByEmojiKeys(pastedText, parserKeys);
+    if (parts.length === 0) return;
+
+    const inputRenderer = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "yt-live-chat-text-input-field-renderer#input"
+    );
+    const inputField = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "yt-live-chat-text-input-field-renderer#input #input"
+    );
+    if (!inputField) return;
+    inputField.focus();
+
+    const emojiPickerBtn = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
+    );
+
+    let idx = 0;
+    const step = () => {
+      if (idx >= parts.length) return;
+      const part = parts[idx++];
+
+      if (part.type === "text") {
+        if (part.value) {
+          if (inputRenderer && typeof inputRenderer.insertText === "function") {
+            inputRenderer.insertText(part.value);
+          } else {
+            document.execCommand("insertText", false, part.value);
+          }
+        }
+        setTimeout(step, 0);
+        return;
+      }
+
+      if (!this.ensureEmojiResolvable(iframe, part.value)) {
+        // 一致しない場合は文字として1回だけ残す
+        if (inputRenderer && typeof inputRenderer.insertText === "function") {
+          inputRenderer.insertText(part.value);
+        } else {
+          document.execCommand("insertText", false, part.value);
+        }
+        setTimeout(step, 0);
+        return;
+      }
+
+      const clickEmoji = () => {
+        const emojiBtn = this.findEmojiElementByName(iframe, part.value);
+        if (emojiBtn) {
+          emojiBtn.click();
+        } else {
+          // まれにDOM更新遅延で見つからない場合は文字として残す
+          if (inputRenderer && typeof inputRenderer.insertText === "function") {
+            inputRenderer.insertText(part.value);
+          } else {
+            document.execCommand("insertText", false, part.value);
+          }
+        }
+        setTimeout(step, 80);
+      };
+
+      const categories = Utils.safeQuerySelector(
+        iframe.contentDocument,
+        "tp-yt-iron-pages #categories"
+      );
+      if (!categories && emojiPickerBtn) {
+        emojiPickerBtn.click();
+        setTimeout(clickEmoji, 120);
+      } else {
+        clickEmoji();
+      }
+    };
+
+    step();
+  },
+
+  bindSendButtonFocus(iframe) {
+    if (!iframe.contentDocument) return;
+    const sendButton = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "#send-button button#button, yt-live-chat-message-input-renderer #send-button button"
+    );
+    if (!sendButton) return;
+    if (sendButton.dataset.chatHelperFocusBound === "true") return;
+
+    sendButton.dataset.chatHelperFocusBound = "true";
+    sendButton.addEventListener("click", () => {
+      setTimeout(() => {
+        if (!iframe.contentDocument) return;
+        const inputField = Utils.safeQuerySelector(
+          iframe.contentDocument,
+          "yt-live-chat-text-input-field-renderer#input #input"
+        );
+        if (!inputField) return;
+        if (inputField.getAttribute("contenteditable") === "false") return;
+
+        inputField.focus();
+        try {
+          const selection = iframe.contentWindow?.getSelection?.();
+          if (!selection) return;
+          const range = iframe.contentDocument.createRange();
+          range.selectNodeContents(inputField);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } catch (e) {
+          // no-op
+        }
+      }, 30);
+    });
+  },
+
+  processInput(iframe, options = {}) {
     if (!this.enabled) return;
 
     if (!iframe.contentDocument) return;
+    const pasteMode = options.mode === "paste";
+    if (!pasteMode && !this.monitorInputChanges) return;
 
     const inputField = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -610,9 +977,6 @@ const CCPPP = {
     );
 
     if (!inputField) return;
-
-    // 既にCCPPPボタンを処理中のノードはスキップ
-    if (inputField.querySelector(".ccppp-emoji-btn")) return;
 
     // テキストノードを検索（iframe内のdocumentを使用）
     const textNodes = [];
@@ -625,46 +989,70 @@ const CCPPP = {
 
     let node;
     while (node = walker.nextNode()) {
+      if (node.parentElement?.classList?.contains("ccppp-emoji-btn")) continue;
       textNodes.push(node);
     }
 
     if (textNodes.length === 0) return;
 
+    let parserKeys = this.getBareKeysForParsing();
+    if (parserKeys.length === 0) return;
+
     // 各テキストノードで絵文字名を検索
+    let replacedCount = 0;
+    const immediateInsertQueue = [];
     textNodes.forEach(textNode => {
       const text = textNode.textContent;
-      if (!text || text.indexOf(':') === -1) return;
-
-      const regex = /:([^:\s]+):/g;
-      let match;
-      let lastIndex = 0;
+      if (!text) return;
       const fragments = [];
       let hasEmoji = false;
+      let pos = 0;
+      let textBuffer = "";
 
-      while ((match = regex.exec(text)) !== null) {
-        const emojiName = match[1];
-        if (this.emojiMap.has(emojiName)) {
-          hasEmoji = true;
-          // マッチ前のテキスト
-          if (match.index > lastIndex) {
-            fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex, match.index)));
+      const flushTextBuffer = () => {
+        if (!textBuffer) return;
+        fragments.push(iframe.contentDocument.createTextNode(textBuffer));
+        textBuffer = "";
+      };
+
+      while (pos < text.length) {
+        let matchedKey = "";
+        let matchedLength = 0;
+
+        for (const key of parserKeys) {
+          const colonToken = `:${key}:`;
+          if (text.startsWith(colonToken, pos)) {
+            matchedKey = key;
+            matchedLength = colonToken.length;
+            break;
           }
-          // 絵文字ボタン
-          const btn = this.createEmojiButton(emojiName, iframe);
-          fragments.push(btn);
-          lastIndex = match.index + match[0].length;
+          if (text.startsWith(key, pos)) {
+            matchedKey = key;
+            matchedLength = key.length;
+            break;
+          }
         }
+
+        if (matchedKey && this.ensureEmojiResolvable(iframe, matchedKey)) {
+          flushTextBuffer();
+          hasEmoji = true;
+          immediateInsertQueue.push(matchedKey);
+          replacedCount += 1;
+          pos += matchedLength;
+          continue;
+        }
+
+        textBuffer += text[pos];
+        pos += 1;
       }
+      flushTextBuffer();
 
       if (hasEmoji) {
-        // 残りのテキスト
-        if (lastIndex < text.length) {
-          fragments.push(iframe.contentDocument.createTextNode(text.slice(lastIndex)));
-        }
         // MutationObserverを一時停止して無限ループを防ぐ
         if (this.observer) this.observer.disconnect();
         // ノードを置換
         const parent = textNode.parentNode;
+        if (!parent) return;
         fragments.forEach(frag => parent.insertBefore(frag, textNode));
         parent.removeChild(textNode);
         // MutationObserverを再開
@@ -677,6 +1065,56 @@ const CCPPP = {
         }
       }
     });
+    if (replacedCount > 0) {
+      this.log("processInput: replaced", { replacedCount, mode: options.mode || "unknown" });
+    }
+    if (immediateInsertQueue.length > 0) {
+      this.log("processInput: immediate-insert", { count: immediateInsertQueue.length, names: immediateInsertQueue });
+      this.insertEmojisDirectly(iframe, immediateInsertQueue);
+    }
+  },
+
+  insertEmojisDirectly(iframe, emojiNames) {
+    if (!iframe.contentDocument || !emojiNames || emojiNames.length === 0) return;
+    const emojiPickerBtn = Utils.safeQuerySelector(
+      iframe.contentDocument,
+      "#emoji-picker-button button, yt-live-chat-icon-toggle-button-renderer button"
+    );
+
+    let index = 0;
+    const run = () => {
+      if (index >= emojiNames.length) return;
+      const name = emojiNames[index++];
+      let tries = 0;
+      const tryClick = () => {
+        tries += 1;
+        const emojiBtn = this.findEmojiElementByName(iframe, name);
+        if (emojiBtn) {
+          emojiBtn.click();
+          this.log("direct-insert: clicked", { emojiName: name });
+          setTimeout(run, 90);
+        } else {
+          if (tries < 6) {
+            setTimeout(tryClick, 70);
+            return;
+          }
+          this.log("direct-insert: not-found", { emojiName: name, tries });
+          setTimeout(run, 40);
+        }
+      };
+
+      const categories = Utils.safeQuerySelector(
+        iframe.contentDocument,
+        "tp-yt-iron-pages #categories"
+      );
+      if (!categories && emojiPickerBtn) {
+        emojiPickerBtn.click();
+        setTimeout(tryClick, 120);
+      } else {
+        tryClick();
+      }
+    };
+    run();
   },
 
   createEmojiButton(emojiName, iframe) {
@@ -710,16 +1148,13 @@ const CCPPP = {
       );
 
       const clickEmoji = () => {
-        const cats = Utils.safeQuerySelector(
-          iframe.contentDocument,
-          "tp-yt-iron-pages #categories"
-        );
-        if (cats) {
-          const emojiBtn = Utils.safeQuerySelector(cats, `img[alt="${emojiName}"]`);
-          if (emojiBtn) {
-            emojiBtn.click();
-            btn.remove();
-          }
+        const emojiBtn = this.findEmojiElementByName(iframe, emojiName);
+        if (emojiBtn) {
+          this.log("click: emoji-found", { emojiName, alt: emojiBtn.alt || null });
+          emojiBtn.click();
+          btn.remove();
+        } else {
+          this.log("click: emoji-not-found", { emojiName });
         }
       };
 
@@ -742,6 +1177,13 @@ const CCPPP = {
     this.enabled = enabled;
     Settings.set("ccpppEnabled", enabled);
   }
+};
+
+// コンソールで状態確認しやすくするためのデバッグAPI
+window.__CCPPP_DEBUG__ = {
+  has: (key) => CCPPP.debugCheckKey(key),
+  sample: (limit = 30) => CCPPP.debugSampleKeys(limit),
+  size: () => CCPPP.emojiMap.size
 };
 
 // UI管理
@@ -1131,7 +1573,7 @@ const UI = {
     if (channelName === GLOBAL_CHANNEL_KEY) {
       template = data.global && data.global[index];
     } else {
-      const channel = data.channels.find(ch => ch.name === channelName);
+      const channel = Storage._findChannelByKey(data, channelName);
       template = channel && channel.data[index];
     }
     const hasAlias = template && template.alias;
