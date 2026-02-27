@@ -3,7 +3,18 @@ const SETTINGS_KEY = "chatHelperSettings";
 
 const defaultSettings = {
     ccpppEnabled: true,
-    autoLoadStamps: true
+    autoLoadStamps: true,
+    hideEmojiCategoryTitles: false,
+    hideEmojiSearch: false,
+    hideChatTopBanner: false,
+    customInputPanelPosition: true,
+    chatPanelPagesWidth: "var(--my-chat-panel-pages-width)",
+    chatPanelPagesHeight: "var(--my-chat-panel-pages-height)",
+    chatPanelPagesMaxHeight: "initial",
+    chatPanelPagesMaxWidth: "450px",
+    chatPanelPagesMinWidth: "300px",
+    chatPanelPagesRight: "0",
+    chatPanelPagesLeft: ""
 };
 
 // 設定をページに注入
@@ -45,6 +56,7 @@ chrome.storage.local.get(SETTINGS_KEY, (result) => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "local" && changes[SETTINGS_KEY]) {
         const newSettings = { ...defaultSettings, ...changes[SETTINGS_KEY].newValue };
+        injectSettings(newSettings);
         notifySettingsChange(newSettings);
     }
 });

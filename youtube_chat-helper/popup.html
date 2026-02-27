@@ -46,6 +46,27 @@
             line-height: 1.4;
         }
 
+        .setting-field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .setting-field label {
+            width: 132px;
+            font-size: 12px;
+            color: #444;
+        }
+
+        .setting-field input[type="text"] {
+            flex: 1;
+            font-size: 12px;
+            padding: 4px 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
         .status {
             font-size: 12px;
             color: #4caf50;
@@ -88,6 +109,59 @@
     <p class="setting-desc">
         ページ読み込み時に絵文字を事前読み込みします
     </p>
+
+    <div class="setting-item">
+        <input type="checkbox" id="hide-emoji-titles-toggle">
+        <label for="hide-emoji-titles-toggle">絵文字カテゴリタイトルを非表示</label>
+    </div>
+
+    <div class="setting-item">
+        <input type="checkbox" id="hide-emoji-search-toggle">
+        <label for="hide-emoji-search-toggle">絵文字検索欄を非表示</label>
+    </div>
+
+    <div class="setting-item">
+        <input type="checkbox" id="hide-chat-header-toggle">
+        <label for="hide-chat-header-toggle">チャットトップバナーを非表示</label>
+    </div>
+
+    <div class="setting-item">
+        <input type="checkbox" id="panel-position-toggle" checked>
+        <label for="panel-position-toggle">入力欄位置をカスタム配置</label>
+    </div>
+
+    <p class="setting-desc">
+        以下は <code>#contents #panel-pages</code> の値です（未入力時はデフォルト使用）
+    </p>
+
+    <div class="setting-field">
+        <label for="panel-pages-width">width</label>
+        <input type="text" id="panel-pages-width" placeholder="var(--my-chat-panel-pages-width)">
+    </div>
+    <div class="setting-field">
+        <label for="panel-pages-height">height</label>
+        <input type="text" id="panel-pages-height" placeholder="var(--my-chat-panel-pages-height)">
+    </div>
+    <div class="setting-field">
+        <label for="panel-pages-max-height">max-height</label>
+        <input type="text" id="panel-pages-max-height" placeholder="initial">
+    </div>
+    <div class="setting-field">
+        <label for="panel-pages-max-width">max-width</label>
+        <input type="text" id="panel-pages-max-width" placeholder="450px">
+    </div>
+    <div class="setting-field">
+        <label for="panel-pages-min-width">min-width</label>
+        <input type="text" id="panel-pages-min-width" placeholder="300px">
+    </div>
+    <div class="setting-field">
+        <label for="panel-pages-right">right</label>
+        <input type="text" id="panel-pages-right" placeholder="0">
+    </div>
+    <div class="setting-field">
+        <label for="panel-pages-left">left</label>
+        <input type="text" id="panel-pages-left" placeholder="(empty)">
+    </div>
 
     <div class="status" id="status">設定を保存しました</div>
 

@@ -124,7 +124,18 @@ const Utils = {
 const Settings = {
   defaults: {
     ccpppEnabled: true,
-    autoLoadStamps: true
+    autoLoadStamps: true,
+    hideEmojiCategoryTitles: false,
+    hideEmojiSearch: false,
+    hideChatTopBanner: false,
+    customInputPanelPosition: true,
+    chatPanelPagesWidth: "var(--my-chat-panel-pages-width)",
+    chatPanelPagesHeight: "var(--my-chat-panel-pages-height)",
+    chatPanelPagesMaxHeight: "initial",
+    chatPanelPagesMaxWidth: "450px",
+    chatPanelPagesMinWidth: "300px",
+    chatPanelPagesRight: "0",
+    chatPanelPagesLeft: ""
   },
 
   get() {
@@ -551,6 +562,85 @@ const UI = {
   currentIframe: null,
   managementModal: null,
 
+  sanitizeCssValue(value, fallback = "") {
+    if (typeof value !== "string") return fallback;
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    if (/^[a-zA-Z0-9\s().,%:+\-_/]+$/.test(trimmed)) {
+      return trimmed;
+    }
+    return fallback;
+  },
+
+  buildDynamicIframeStyles(settings) {
+    const safe = (value, fallback = "") => this.sanitizeCssValue(value, fallback);
+    const chunks = [];
+
+    if (settings.hideEmojiCategoryTitles) {
+      chunks.push(`
+        yt-formatted-string#title.yt-emoji-picker-category-renderer,
+        yt-formatted-string#title.yt-emoji-picker-upsell-category-renderer {
+          display: none !important;
+        }
+      `);
+    }
+
+    if (settings.hideEmojiSearch) {
+      chunks.push(`
+        #search-panel,
+        #category-buttons {
+          display: none !important;
+        }
+      `);
+    }
+
+    if (settings.hideChatTopBanner) {
+      chunks.push(`
+        yt-live-chat-header-renderer {
+          display: none !important;
+        }
+      `);
+    }
+
+    if (settings.customInputPanelPosition) {
+      const width = safe(settings.chatPanelPagesWidth, "var(--my-chat-panel-pages-width)");
+      const height = safe(settings.chatPanelPagesHeight, "var(--my-chat-panel-pages-height)");
+      const maxHeight = safe(settings.chatPanelPagesMaxHeight, "initial");
+      const maxWidth = safe(settings.chatPanelPagesMaxWidth, "450px");
+      const minWidth = safe(settings.chatPanelPagesMinWidth, "300px");
+      const right = safe(settings.chatPanelPagesRight, "0");
+      const left = safe(settings.chatPanelPagesLeft, "");
+
+      chunks.push(`
+        #contents #panel-pages {
+          width: ${width};
+          height: ${height};
+          max-height: ${maxHeight};
+          max-width: ${maxWidth};
+          min-width: ${minWidth};
+          right: ${right};
+          position: fixed;
+          border: none;
+          ${left ? `left: ${left};` : ""}
+        }
+      `);
+    }
+
+    return chunks.join("\n");
+  },
+
+  applyDynamicIframeStyles(iframe) {
+    if (!iframe?.contentDocument?.head) return;
+    const styleId = "chat-helper-dynamic-styles";
+    let styleTag = iframe.contentDocument.querySelector(`#${styleId}`);
+    if (!styleTag) {
+      styleTag = document.createElement("style");
+      styleTag.id = styleId;
+      iframe.contentDocument.head.appendChild(styleTag);
+    }
+    styleTag.textContent = this.buildDynamicIframeStyles(Settings.get());
+  },
+
   readChatInput(iframe) {
     const inputElement = Utils.safeQuerySelector(
       iframe.contentDocument,
@@ -736,14 +826,18 @@ const UI = {
         btn.classList.add("dragging");
         e.dataTransfer.effectAllowed = "move";
         // ドラッグ中のカーソルを設定
-        iframe.contentDocument.body.style.cursor = "grabbing";
+        if (iframe.contentDocument?.body) {
+          iframe.contentDocument.body.style.cursor = "grabbing";
+        }
       });
 
       btn.addEventListener("dragend", () => {
         btn.classList.remove("dragging");
         draggedBtn = null;
         // カーソルを元に戻す
-        iframe.contentDocument.body.style.cursor = "";
+        if (iframe.contentDocument?.body) {
+          iframe.contentDocument.body.style.cursor = "";
+        }
       });
 
       btn.addEventListener("dragover", (e) => {
@@ -786,6 +880,9 @@ const UI = {
 
   // 別名入力ダイアログを表示
   showAliasInputDialog(event, template, channelName, index, iframe) {
+    if (!iframe?.contentDocument?.body) return;
+    if (!template || !Array.isArray(template.content)) return;
+
     // 既存のダイアログを削除
     const existingDialog = iframe.contentDocument.querySelector("#chat-helper-alias-dialog");
     if (existingDialog) existingDialog.remove();
@@ -924,6 +1021,8 @@ const UI = {
   },
 
   showContextMenu(event, channelName, index, iframe, isGlobal) {
+    if (!iframe?.contentDocument?.body) return;
+
     // 既存のメニューを削除（iframe内と親ドキュメント両方）
     const existingMenu = iframe.contentDocument.querySelector("#chat-helper-context-menu");
     if (existingMenu) existingMenu.remove();
@@ -939,6 +1038,7 @@ const UI = {
       const channel = data.channels.find(ch => ch.name === channelName);
       template = channel && channel.data[index];
     }
+    if (!template || !Array.isArray(template.content)) return;
     const hasAlias = template && template.alias;
 
     const menu = document.createElement("div");
@@ -1104,6 +1204,27 @@ const UI = {
                 <span>ページ読み込み時にスタンプを自動読み込み</span>
               </label>
               <p class="setting-desc">ページ読み込み時に絵文字ボタンを自動クリックしてスタンプを事前読み込みします</p>
+
+              <label class="setting-item">
+                <input type="checkbox" id="hide-emoji-titles-toggle" ${settings.hideEmojiCategoryTitles ? "checked" : ""}>
+                <span>絵文字カテゴリタイトルを非表示</span>
+              </label>
+
+              <label class="setting-item">
+                <input type="checkbox" id="hide-emoji-search-toggle" ${settings.hideEmojiSearch ? "checked" : ""}>
+                <span>絵文字検索エリアを非表示</span>
+              </label>
+
+              <label class="setting-item">
+                <input type="checkbox" id="hide-chat-header-toggle" ${settings.hideChatTopBanner ? "checked" : ""}>
+                <span>チャットトップバナーを非表示</span>
+              </label>
+
+              <label class="setting-item">
+                <input type="checkbox" id="panel-position-toggle" ${settings.customInputPanelPosition ? "checked" : ""}>
+                <span>入力欄位置をカスタム配置</span>
+              </label>
+              <p class="setting-desc">詳細値（幅/高さ/left/right等）は拡張機能ポップアップで設定できます</p>
             </div>
           </div>
           <div class="tab-content hidden" id="tab-current"></div>
@@ -1125,6 +1246,26 @@ const UI = {
 
     modal.querySelector("#autoload-toggle").addEventListener("change", (e) => {
       Settings.set("autoLoadStamps", e.target.checked);
+    });
+
+    modal.querySelector("#hide-emoji-titles-toggle").addEventListener("change", (e) => {
+      Settings.set("hideEmojiCategoryTitles", e.target.checked);
+      if (this.currentIframe) this.applyDynamicIframeStyles(this.currentIframe);
+    });
+
+    modal.querySelector("#hide-emoji-search-toggle").addEventListener("change", (e) => {
+      Settings.set("hideEmojiSearch", e.target.checked);
+      if (this.currentIframe) this.applyDynamicIframeStyles(this.currentIframe);
+    });
+
+    modal.querySelector("#hide-chat-header-toggle").addEventListener("change", (e) => {
+      Settings.set("hideChatTopBanner", e.target.checked);
+      if (this.currentIframe) this.applyDynamicIframeStyles(this.currentIframe);
+    });
+
+    modal.querySelector("#panel-position-toggle").addEventListener("change", (e) => {
+      Settings.set("customInputPanelPosition", e.target.checked);
+      if (this.currentIframe) this.applyDynamicIframeStyles(this.currentIframe);
     });
 
     // タブ切り替え
@@ -1295,11 +1436,10 @@ const UI = {
     }
 
     const styleId = "chat-helper-styles";
-    if (iframe.contentDocument.querySelector(`#${styleId}`)) return;
-
-    const styleTag = document.createElement("style");
-    styleTag.id = styleId;
-    styleTag.textContent = `
+    if (!iframe.contentDocument.querySelector(`#${styleId}`)) {
+      const styleTag = document.createElement("style");
+      styleTag.id = styleId;
+      styleTag.textContent = `
             #chat-helper-buttons {
                 position: relative;
                 top: 0;
@@ -1373,7 +1513,10 @@ const UI = {
             }
     `;
 
-    iframe.contentDocument.head.appendChild(styleTag);
+      iframe.contentDocument.head.appendChild(styleTag);
+    }
+
+    this.applyDynamicIframeStyles(iframe);
   },
 
   addMainPageStyles() {
@@ -1642,6 +1785,9 @@ const ChatHelper = {
     Settings.listenForChanges((newSettings) => {
       console.log("設定が変更されました:", newSettings);
       CCPPP.enabled = newSettings.ccpppEnabled;
+      if (UI.currentIframe) {
+        UI.applyDynamicIframeStyles(UI.currentIframe);
+      }
 
       // CCPPPが有効になった場合、再初期化
       if (newSettings.ccpppEnabled && UI.currentIframe) {
@@ -1669,6 +1815,7 @@ const ChatHelper = {
       Settings.listenForChanges((newSettings) => {
         console.log("iframe内: 設定が変更されました:", newSettings);
         CCPPP.enabled = newSettings.ccpppEnabled;
+        UI.applyDynamicIframeStyles(pseudoIframe);
 
         if (newSettings.ccpppEnabled) {
           CCPPP.init(pseudoIframe);
